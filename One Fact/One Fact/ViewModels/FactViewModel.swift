@@ -7,28 +7,37 @@ class FactViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var hasSeenFactToday = false
+    @Published var todaysCategory: Category?
     
-    private let factService = FactService()
-    private let userDefaults = UserDefaults.standard
+    private let factService: FactService
+    private let defaults = UserDefaults.standard
     
-    let categories = [
-        Category(name: "Science", icon: "🧬", color: .blue),
+    let categories: [Category] = [
+        Category(name: "Science", icon: "🔬", color: .blue),
         Category(name: "History", icon: "📜", color: .brown),
         Category(name: "Technology", icon: "💻", color: .purple),
-        Category(name: "Space", icon: "🌌", color: .indigo),
         Category(name: "Nature", icon: "🌿", color: .green),
-        Category(name: "Art", icon: "🎨", color: .pink),
-        Category(name: "Literature", icon: "📚", color: .orange)
+        Category(name: "Space", icon: "🚀", color: .indigo),
+        Category(name: "Art", icon: "🎨", color: .pink)
     ]
     
     init() {
+        self.factService = FactService()
         checkDailyFactStatus()
     }
     
     func checkDailyFactStatus() {
-        let lastSeenDate = userDefaults.object(forKey: "LastSeenFactDate") as? Date
-        let today = Calendar.current.startOfDay(for: Date())
-        hasSeenFactToday = lastSeenDate != nil && Calendar.current.isDate(lastSeenDate!, inSameDayAs: today)
+        let lastSeenDate = defaults.object(forKey: "LastSeenFactDate") as? Date ?? Date.distantPast
+        let categoryName = defaults.string(forKey: "TodaysCategoryName")
+        
+        hasSeenFactToday = Calendar.current.isDate(lastSeenDate, inSameDayAs: Date())
+        
+        if hasSeenFactToday, let categoryName = categoryName {
+            todaysCategory = categories.first { $0.name == categoryName }
+        } else {
+            todaysCategory = nil
+            hasSeenFactToday = false
+        }
     }
     
     func fetchFactByCategory(_ category: String) async throws {
@@ -38,19 +47,22 @@ class FactViewModel: ObservableObject {
         do {
             let fact = try await factService.fetchFactByCategory(category)
             currentFact = fact
-            
-            // Mark as seen for today
-            userDefaults.set(Date(), forKey: "LastSeenFactDate")
+            defaults.set(Date(), forKey: "LastSeenFactDate")
+            defaults.set(category, forKey: "TodaysCategoryName")
             hasSeenFactToday = true
+            todaysCategory = categories.first { $0.name == category }
+            isLoading = false
         } catch {
-            errorMessage = "Cannot connect to server"
+            errorMessage = "Failed to fetch fact: \(error.localizedDescription)"
+            isLoading = false
         }
-        
-        isLoading = false
     }
     
-    func clearCurrentFact() {
-        currentFact = nil
+    func canViewCategory(_ category: Category) -> Bool {
+        if !hasSeenFactToday {
+            return true
+        }
+        return todaysCategory?.name == category.name
     }
 }
 

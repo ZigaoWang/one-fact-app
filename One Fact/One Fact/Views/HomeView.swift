@@ -7,11 +7,21 @@
 
 import SwiftUI
 
-struct HomeView: View {
+@MainActor
+struct AsyncHomeView: View {
     @StateObject private var viewModel = FactViewModel()
+    
+    var body: some View {
+        HomeView(viewModel: viewModel)
+    }
+}
+
+struct HomeView: View {
+    @ObservedObject var viewModel: FactViewModel
     @State private var selectedCategory: Category?
     @State private var showingConfirmation = false
     @State private var showingFactView = false
+    @Environment(\.scenePhase) var scenePhase
     
     let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 2)
     
@@ -20,18 +30,18 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     // Daily Status Card
-                    DailyStatusCard(hasSeenFactToday: viewModel.hasSeenFactToday)
+                    DailyStatusCard(hasSeenFactToday: viewModel.hasSeenFactToday, category: viewModel.todaysCategory)
                     
                     // Categories Grid
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(viewModel.categories) { category in
-                            CategoryCard(category: category)
-                                .onTapGesture {
-                                    if !viewModel.hasSeenFactToday {
-                                        selectedCategory = category
-                                        showingConfirmation = true
-                                    }
-                                }
+                            CategoryCard(
+                                category: category,
+                                isSelected: category.name == viewModel.todaysCategory?.name
+                            )
+                            .onTapGesture {
+                                handleCategoryTap(category)
+                            }
                         }
                     }
                     .padding(.horizontal)
@@ -60,32 +70,63 @@ struct HomeView: View {
                 }
             }
         }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                viewModel.checkDailyFactStatus()
+            }
+        }
+    }
+    
+    private func handleCategoryTap(_ category: Category) {
+        if viewModel.canViewCategory(category) {
+            selectedCategory = category
+            if !viewModel.hasSeenFactToday {
+                showingConfirmation = true
+            } else {
+                showingFactView = true
+            }
+        }
     }
 }
 
-// MARK: - Supporting Views
 struct DailyStatusCard: View {
     let hasSeenFactToday: Bool
+    let category: Category?
     
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: hasSeenFactToday ? "checkmark.circle.fill" : "sparkles")
-                .font(.system(size: 40))
-                .foregroundColor(hasSeenFactToday ? .green : .orange)
-            
-            Text(hasSeenFactToday ? "You've learned something today!" : "Ready to learn something new?")
-                .font(.headline)
-            
-            Text(hasSeenFactToday ? "Come back tomorrow for more!" : "Choose a category below")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            if hasSeenFactToday, let category = category {
+                VStack(spacing: 8) {
+                    Text(category.icon)
+                        .font(.system(size: 44))
+                    
+                    Text("You've learned about \(category.name) today!")
+                        .font(.headline)
+                        .foregroundColor(category.color)
+                    
+                    Text("Tap the \(category.name) card to view it again")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 40))
+                    .foregroundColor(.orange)
+                
+                Text("Ready to learn something new?")
+                    .font(.headline)
+                
+                Text("Choose a category below")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.1), radius: 10)
+                .shadow(color: (category?.color ?? .black).opacity(0.1), radius: 10)
         )
         .padding(.horizontal)
     }
@@ -93,8 +134,8 @@ struct DailyStatusCard: View {
 
 struct CategoryCard: View {
     let category: Category
+    let isSelected: Bool
     @State private var isPressed = false
-    @State private var isDisabled = false
     
     var body: some View {
         VStack(spacing: 12) {
@@ -106,10 +147,21 @@ struct CategoryCard: View {
                 .font(.headline)
                 .foregroundColor(category.color)
             
-            Text("Tap to explore")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .opacity(isDisabled ? 0.5 : 1.0)
+            if isSelected {
+                Text("View again")
+                    .font(.caption)
+                    .foregroundColor(category.color)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(category.color.opacity(0.1))
+                    )
+            } else {
+                Text("Tap to explore")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
@@ -125,7 +177,7 @@ struct CategoryCard: View {
                     .fill(
                         LinearGradient(
                             gradient: Gradient(colors: [
-                                category.color.opacity(0.1),
+                                category.color.opacity(isSelected ? 0.2 : 0.1),
                                 Color(.systemBackground).opacity(0.8)
                             ]),
                             startPoint: .topLeading,
@@ -136,11 +188,11 @@ struct CategoryCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(category.color.opacity(0.2), lineWidth: 1)
+                .stroke(category.color.opacity(isSelected ? 0.4 : 0.2), lineWidth: isSelected ? 2 : 1)
         )
         .pressAnimation(isPressed: isPressed)
-        .opacity(isDisabled ? 0.6 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDisabled)
+        .scaleEffect(isSelected ? 1.02 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
     }
 }
 
@@ -356,6 +408,6 @@ private struct RelatedArticlesCard: View {
 
 struct HomeView_Previews: PreviewProvider {
     static var previews: some View {
-        HomeView()
+        AsyncHomeView()
     }
 }

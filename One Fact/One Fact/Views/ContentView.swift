@@ -5,7 +5,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) var scenePhase
     
     var body: some View {
-        HomeView()
+        AsyncHomeView()
             .environmentObject(viewModel)
             .onChange(of: scenePhase) { newPhase in
                 if newPhase == .active {
@@ -15,6 +15,8 @@ struct ContentView: View {
     }
 }
 
-#Preview {
-    ContentView()
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
