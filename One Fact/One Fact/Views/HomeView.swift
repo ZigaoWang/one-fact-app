@@ -93,11 +93,14 @@ struct DailyStatusCard: View {
 
 struct CategoryCard: View {
     let category: Category
+    @State private var isPressed = false
+    @State private var isDisabled = false
     
     var body: some View {
         VStack(spacing: 12) {
             Text(category.icon)
                 .font(.system(size: 44))
+                .rotationEffect(.degrees(isPressed ? 8 : 0))
             
             Text(category.name)
                 .font(.headline)
@@ -106,45 +109,100 @@ struct CategoryCard: View {
             Text("Tap to explore")
                 .font(.caption)
                 .foregroundColor(.secondary)
+                .opacity(isDisabled ? 0.5 : 1.0)
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: category.color.opacity(0.2), radius: 10)
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: category.color.opacity(0.2), radius: 10)
+                
+                // Gradient overlay
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                category.color.opacity(0.1),
+                                Color(.systemBackground).opacity(0.8)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(category.color.opacity(0.2), lineWidth: 1)
+        )
+        .pressAnimation(isPressed: isPressed)
+        .opacity(isDisabled ? 0.6 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isDisabled)
     }
 }
 
 struct FactDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var viewModel: FactViewModel
+    @State private var showContent = false
+    @State private var showRelatedArticles = false
     
     let category: Category
     
     var body: some View {
         NavigationView {
             ZStack {
+                // Background gradient
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        category.color.opacity(0.1),
+                        Color(.systemBackground)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
+                
                 if viewModel.isLoading {
                     LoadingView()
+                        .transition(.opacity)
                 } else if let fact = viewModel.currentFact {
                     ScrollView {
                         VStack(spacing: 20) {
+                            // Category icon
+                            Text(category.icon)
+                                .font(.system(size: 60))
+                                .opacity(showContent ? 1 : 0)
+                                .offset(y: showContent ? 0 : 20)
+                            
+                            // Fact card
                             FactCard(fact: fact)
+                                .opacity(showContent ? 1 : 0)
+                                .offset(y: showContent ? 0 : 40)
+                            
+                            // Related articles
                             if !fact.relatedArticles.isEmpty {
                                 RelatedArticlesCard(articles: fact.relatedArticles)
+                                    .opacity(showRelatedArticles ? 1 : 0)
+                                    .offset(y: showRelatedArticles ? 0 : 60)
                             }
                         }
                         .padding()
                     }
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .bottom)),
+                        removal: .opacity.combined(with: .move(edge: .bottom))
+                    ))
                 } else if let error = viewModel.errorMessage {
                     ErrorView(message: error) {
                         Task {
                             try? await viewModel.fetchFactByCategory(category.name)
                         }
                     }
+                    .transition(.opacity)
                 }
             }
             .navigationTitle(category.name)
@@ -152,13 +210,21 @@ struct FactDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Close") {
-                        dismiss()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            dismiss()
+                        }
                     }
                 }
             }
         }
         .task {
             try? await viewModel.fetchFactByCategory(category.name)
+            withAnimation(.easeOut(duration: 0.5)) {
+                showContent = true
+            }
+            withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
+                showRelatedArticles = true
+            }
         }
     }
 }
