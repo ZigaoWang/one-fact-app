@@ -29,26 +29,55 @@ struct HomeView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 24) {
-                    // Daily Status Card
-                    DailyStatusCard(hasSeenFactToday: viewModel.hasSeenFactToday, category: viewModel.todaysCategory)
+                    // Welcome Message
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Welcome to")
+                            .font(.title2)
+                            .foregroundColor(.secondary)
+                        Text("One Fact")
+                            .font(.system(size: 40, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top)
                     
-                    // Categories Grid
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(viewModel.categories) { category in
-                            CategoryCard(
-                                category: category,
-                                isSelected: category.name == viewModel.todaysCategory?.name
-                            )
-                            .onTapGesture {
-                                handleCategoryTap(category)
+                    // Daily Status Card
+                    DailyStatusCard(
+                        hasSeenFactToday: viewModel.hasSeenFactToday,
+                        category: viewModel.todaysCategory,
+                        showingFactView: $showingFactView,
+                        selectedCategory: $selectedCategory
+                    )
+                    .padding(.horizontal)
+                    
+                    // Categories Section
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Categories")
+                            .font(.title2.bold())
+                            .padding(.horizontal)
+                        
+                        // Categories Grid
+                        LazyVGrid(columns: columns, spacing: 16) {
+                            ForEach(viewModel.categories) { category in
+                                CategoryCard(
+                                    category: category,
+                                    isSelected: category.name == viewModel.todaysCategory?.name,
+                                    isDisabled: !viewModel.canViewCategory(category),
+                                    onTap: {
+                                        withAnimation(.spring()) {
+                                            handleCategoryTap(category)
+                                        }
+                                    }
+                                )
                             }
                         }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
                 }
-                .padding(.top)
+                .padding(.bottom)
             }
-            .navigationTitle("One Fact")
+            .background(Color(.systemGroupedBackground))
             .confirmationDialog(
                 "Are you ready?",
                 isPresented: $showingConfirmation,
@@ -92,107 +121,114 @@ struct HomeView: View {
 struct DailyStatusCard: View {
     let hasSeenFactToday: Bool
     let category: Category?
+    @Binding var showingFactView: Bool
+    @Binding var selectedCategory: Category?
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             if hasSeenFactToday, let category = category {
-                VStack(spacing: 8) {
-                    Text(category.icon)
-                        .font(.system(size: 44))
-                    
-                    Text("You've learned about \(category.name) today!")
-                        .font(.headline)
-                        .foregroundColor(category.color)
-                    
-                    Text("Tap the \(category.name) card to view it again")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                Button {
+                    selectedCategory = category
+                    showingFactView = true
+                } label: {
+                    VStack(spacing: 12) {
+                        Text(category.icon)
+                            .font(.system(size: 44))
+                            .padding(20)
+                            .background(
+                                Circle()
+                                    .fill(category.color.opacity(0.2))
+                            )
+                        
+                        VStack(spacing: 4) {
+                            Text("Today's Fact Category")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Text(category.name)
+                                .font(.title2.bold())
+                                .foregroundColor(category.color)
+                        }
+                    }
                 }
             } else {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 40))
-                    .foregroundColor(.orange)
-                
-                Text("Ready to learn something new?")
-                    .font(.headline)
-                
-                Text("Choose a category below")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                VStack(spacing: 12) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 44))
+                        .foregroundColor(.yellow)
+                        .padding(20)
+                        .background(
+                            Circle()
+                                .fill(Color.yellow.opacity(0.2))
+                        )
+                    
+                    VStack(spacing: 4) {
+                        Text("Ready to Learn?")
+                            .font(.title3.bold())
+                        Text("Choose a category to discover your daily fact")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity)
-        .padding()
+        .padding(24)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(Color(.systemBackground))
-                .shadow(color: (category?.color ?? .black).opacity(0.1), radius: 10)
+                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
         )
-        .padding(.horizontal)
     }
 }
 
 struct CategoryCard: View {
     let category: Category
     let isSelected: Bool
+    let isDisabled: Bool
+    let onTap: () -> Void
     @State private var isPressed = false
     
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Text(category.icon)
                 .font(.system(size: 44))
-                .rotationEffect(.degrees(isPressed ? 8 : 0))
+                .padding(20)
+                .background(
+                    Circle()
+                        .fill(category.color.opacity(0.2))
+                )
             
             Text(category.name)
                 .font(.headline)
                 .foregroundColor(category.color)
-            
-            if isSelected {
-                Text("View again")
-                    .font(.caption)
-                    .foregroundColor(category.color)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(category.color.opacity(0.1))
-                    )
-            } else {
-                Text("Tap to explore")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
         }
         .frame(maxWidth: .infinity)
-        .aspectRatio(1, contentMode: .fit)
-        .padding()
+        .padding(.vertical, 20)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: category.color.opacity(0.2), radius: 10)
-                
-                // Gradient overlay
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                category.color.opacity(isSelected ? 0.2 : 0.1),
-                                Color(.systemBackground).opacity(0.8)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color(.systemBackground))
+                .shadow(color: category.color.opacity(isPressed ? 0.2 : 0.1), radius: isPressed ? 5 : 10, x: 0, y: isPressed ? 2 : 5)
         )
+        .scaleEffect(isPressed ? 0.95 : 1.0)
+        .opacity(isDisabled ? 0.5 : 1.0)
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(category.color.opacity(isSelected ? 0.4 : 0.2), lineWidth: isSelected ? 2 : 1)
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(isSelected ? category.color : Color.clear, lineWidth: 2)
         )
-        .pressAnimation(isPressed: isPressed)
-        .scaleEffect(isSelected ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
+        .onTapGesture {
+            if !isDisabled {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                    isPressed = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        isPressed = false
+                    }
+                }
+                onTap()
+            }
+        }
     }
 }
 
@@ -231,30 +267,25 @@ struct FactDetailView: View {
                                 .offset(y: showContent ? 0 : 20)
                             
                             // Fact card
-                            FactCard(fact: fact)
+                            FactCard(fact: fact, category: category)
                                 .opacity(showContent ? 1 : 0)
                                 .offset(y: showContent ? 0 : 40)
                             
                             // Related articles
                             if !fact.relatedArticles.isEmpty {
-                                RelatedArticlesCard(articles: fact.relatedArticles)
+                                RelatedArticlesSection(articles: fact.relatedArticles, category: category)
                                     .opacity(showRelatedArticles ? 1 : 0)
                                     .offset(y: showRelatedArticles ? 0 : 60)
                             }
                         }
                         .padding()
                     }
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .move(edge: .bottom)),
-                        removal: .opacity.combined(with: .move(edge: .bottom))
-                    ))
                 } else if let error = viewModel.errorMessage {
                     ErrorView(message: error) {
                         Task {
                             try? await viewModel.fetchFactByCategory(category.name)
                         }
                     }
-                    .transition(.opacity)
                 }
             }
             .navigationTitle(category.name)
@@ -281,6 +312,78 @@ struct FactDetailView: View {
     }
 }
 
+private struct FactCard: View {
+    let fact: Fact
+    let category: Category
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // Image Placeholder
+            ZStack {
+                Rectangle()
+                    .fill(category.color.opacity(0.1))
+                    .frame(height: 200)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                
+                VStack(spacing: 8) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 40))
+                        .foregroundColor(category.color.opacity(0.3))
+                    Text("Fact Image")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            // Fact Content
+            VStack(alignment: .leading, spacing: 16) {
+                Text(fact.content)
+                    .font(.body)
+                    .lineSpacing(4)
+                
+                HStack {
+                    Text("Source: \(fact.source)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if let url = fact.url {
+                        Link("Learn More", destination: URL(string: url)!)
+                            .font(.caption.bold())
+                            .foregroundColor(category.color)
+                    }
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: category.color.opacity(0.1), radius: 8, x: 0, y: 4)
+            )
+        }
+    }
+}
+
+private struct RelatedArticlesSection: View {
+    let articles: [RelatedArticle]
+    let category: Category
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Related Articles")
+                .font(.headline)
+                .foregroundColor(category.color)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(articles) { article in
+                        RelatedArticleCard(article: article, color: category.color)
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Supporting Views
 private struct BackgroundView: View {
     var body: some View {
@@ -291,118 +394,47 @@ private struct BackgroundView: View {
 
 private struct LoadingView: View {
     var body: some View {
-        ProgressView()
-            .scaleEffect(1.5)
+        VStack(spacing: 20) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("Loading your fact...")
+                .font(.headline)
+                .foregroundColor(.secondary)
+        }
     }
 }
 
 private struct ErrorView: View {
     let message: String
-    let retryAction: () -> Void
+    let retry: () -> Void
     
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundColor(.orange)
+                .font(.system(size: 50))
+                .foregroundColor(.red)
+            
+            Text("Oops!")
+                .font(.title2.bold())
+            
             Text(message)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-            Button("Try Again", action: retryAction)
-                .buttonStyle(.bordered)
-        }
-        .padding()
-    }
-}
-
-private struct FactCard: View {
-    let fact: Fact
-    
-    var categoryIcon: String {
-        switch fact.category {
-        case "Science": return "🧬"
-        case "History": return "📜"
-        case "Technology": return "💻"
-        case "Space": return "🌌"
-        case "Nature": return "🌿"
-        case "Art": return "🎨"
-        case "Literature": return "📚"
-        default: return "💡"
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("\(categoryIcon) \(fact.category)")
-                    .font(.headline)
-                    .foregroundColor(.blue)
-                Spacer()
-            }
-            
-            Text(fact.content)
                 .font(.body)
-                .multilineTextAlignment(.leading)
-            
-            Text("Source: \(fact.source)")
-                .font(.caption)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
             
-            if let url = fact.url {
-                Link("Read More", destination: URL(string: url)!)
-                    .font(.caption)
+            Button(action: retry) {
+                Text("Try Again")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 12)
+                    .background(
+                        Capsule()
+                            .fill(Color.blue)
+                    )
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 5)
-    }
-}
-
-private struct RelatedArticlesCard: View {
-    let articles: [RelatedArticle]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Related Articles")
-                .font(.headline)
-            
-            ForEach(articles) { article in
-                VStack(alignment: .leading, spacing: 8) {
-                    if let imageUrl = article.imageUrl,
-                       let url = URL(string: imageUrl) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Color.gray.opacity(0.3)
-                        }
-                        .frame(height: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    
-                    Link(destination: URL(string: article.url)!) {
-                        Text(article.title)
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                    }
-                    
-                    Text(article.snippet)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Source: \(article.source)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 5)
     }
 }
 
