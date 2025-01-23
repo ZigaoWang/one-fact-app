@@ -125,12 +125,14 @@ struct DailyStatusCard: View {
     @Binding var selectedCategory: Category?
     
     var body: some View {
-        VStack(spacing: 16) {
+        Button {
             if hasSeenFactToday, let category = category {
-                Button {
-                    selectedCategory = category
-                    showingFactView = true
-                } label: {
+                selectedCategory = category
+                showingFactView = true
+            }
+        } label: {
+            VStack(spacing: 16) {
+                if hasSeenFactToday, let category = category {
                     VStack(spacing: 12) {
                         Text(category.icon)
                             .font(.system(size: 44))
@@ -149,36 +151,37 @@ struct DailyStatusCard: View {
                                 .foregroundColor(category.color)
                         }
                     }
-                }
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 44))
-                        .foregroundColor(.yellow)
-                        .padding(20)
-                        .background(
-                            Circle()
-                                .fill(Color.yellow.opacity(0.2))
-                        )
-                    
-                    VStack(spacing: 4) {
-                        Text("Ready to Learn?")
-                            .font(.title3.bold())
-                        Text("Choose a category to discover your daily fact")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 44))
+                            .foregroundColor(.yellow)
+                            .padding(20)
+                            .background(
+                                Circle()
+                                    .fill(Color.yellow.opacity(0.2))
+                            )
+                        
+                        VStack(spacing: 4) {
+                            Text("Ready to Learn?")
+                                .font(.title3.bold())
+                            Text("Choose a category to discover your daily fact")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(.systemBackground))
-                .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
-        )
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
