@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"github.com/zigaowang/one-fact/internal/models"
+	"github.com/ZigaoWang/one-fact-app/internal/models"
 )
 
 func InitDB() (*gorm.DB, error) {
@@ -35,22 +35,47 @@ func InitDB() (*gorm.DB, error) {
 	if dbname == "" {
 		dbname = "one_fact"
 	}
-
-	// Create connection string
+	
+	// Create the database connection string
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		host, port, user, password, dbname)
-
-	// Connect to database
+	
+	// Open database connection
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %v", err)
 	}
 
-	// Auto migrate models
+	// Auto-migrate the models
 	err = db.AutoMigrate(&models.Fact{}, &models.RelatedArticle{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %v", err)
 	}
 
+	// Add some sample data if the database is empty
+	var count int64
+	db.Model(&models.Fact{}).Count(&count)
+	if count == 0 {
+		// Create a sample fact
+		sampleURL := "https://en.wikipedia.org/wiki/Honey"
+		fact := models.Fact{
+			Content:     "Honey never spoils. Archaeologists have found pots of honey in ancient Egyptian tombs that are over 3,000 years old and still perfectly edible.",
+			Category:    "Science",
+			Source:      "National Geographic",
+			URL:         &sampleURL,
+			DisplayDate: models.Fact{}.CreatedAt,
+			Active:      true,
+			RelatedArticles: []models.RelatedArticle{
+				{
+					Title:    "The Science Behind Honey's Eternal Shelf Life",
+					URL:      "https://www.smithsonianmag.com/science-nature/the-science-behind-honeys-eternal-shelf-life-1218690/",
+					Source:   "Smithsonian Magazine",
+					Snippet:  "Modern archeologists, excavating ancient Egyptian tombs, have often found something unexpected amongst the tombs' artifacts: pots of honey, thousands of years old, and yet still preserved.",
+				},
+			},
+		}
+		db.Create(&fact)
+	}
+	
 	return db, nil
 }

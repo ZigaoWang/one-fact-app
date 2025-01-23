@@ -18,391 +18,232 @@ struct AsyncHomeView: View {
 
 struct HomeView: View {
     @ObservedObject var viewModel: FactViewModel
-    @State private var selectedCategory: Category?
-    @State private var showingConfirmation = false
     @State private var showingFactView = false
+    @State private var showingChatView = false
     @Environment(\.scenePhase) var scenePhase
-    
-    let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: 2)
     
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 24) {
-                    // Daily Status Card
-                    DailyStatusCard(hasSeenFactToday: viewModel.hasSeenFactToday, category: viewModel.todaysCategory)
-                    
-                    // Categories Grid
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(viewModel.categories) { category in
-                            CategoryCard(
-                                category: category,
-                                isSelected: category.name == viewModel.todaysCategory?.name
-                            )
+                    if let fact = viewModel.currentFact {
+                        // Today's Fact Card
+                        FactCardView(fact: fact)
                             .onTapGesture {
-                                handleCategoryTap(category)
+                                showingFactView = true
                             }
+                        
+                        // Related Articles
+                        if !viewModel.relatedArticles.isEmpty {
+                            RelatedArticlesView(articles: viewModel.relatedArticles)
+                        }
+                        
+                        // Chat Button
+                        Button(action: { showingChatView = true }) {
+                            HStack {
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                Text("Ask AI About This Fact")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
+                    } else {
+                        if viewModel.isLoading {
+                            ProgressView("Loading today's fact...")
+                        } else {
+                            VStack(spacing: 16) {
+                                Image(systemName: "lightbulb.fill")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.yellow)
+                                Text("Welcome to One Fact!")
+                                    .font(.title)
+                                Text("Your daily dose of knowledge awaits.")
+                                    .foregroundColor(.secondary)
+                                Button("Get Today's Fact") {
+                                    Task {
+                                        await viewModel.fetchDailyFact()
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                            .padding()
                         }
                     }
-                    .padding(.horizontal)
                 }
                 .padding(.top)
             }
             .navigationTitle("One Fact")
-            .confirmationDialog(
-                "Are you ready?",
-                isPresented: $showingConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Learn about \(selectedCategory?.name ?? "")") {
-                    showingFactView = true
-                }
-                Button("Maybe later", role: .cancel) {
-                    selectedCategory = nil
-                }
-            } message: {
-                Text("You can only view one fact per day. Make it count!")
+            .sheet(isPresented: $showingFactView) {
+                FactDetailView(fact: viewModel.currentFact!)
             }
-            .fullScreenCover(isPresented: $showingFactView) {
-                if let category = selectedCategory {
-                    FactDetailView(category: category)
-                        .environmentObject(viewModel)
+            .sheet(isPresented: $showingChatView) {
+                ChatView(viewModel: viewModel)
+            }
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active {
+                    viewModel.checkDailyFactStatus()
                 }
-            }
-        }
-        .onChange(of: scenePhase) { newPhase in
-            if newPhase == .active {
-                viewModel.checkDailyFactStatus()
-            }
-        }
-    }
-    
-    private func handleCategoryTap(_ category: Category) {
-        if viewModel.canViewCategory(category) {
-            selectedCategory = category
-            if !viewModel.hasSeenFactToday {
-                showingConfirmation = true
-            } else {
-                showingFactView = true
             }
         }
     }
 }
 
-struct DailyStatusCard: View {
-    let hasSeenFactToday: Bool
-    let category: Category?
+struct FactCardView: View {
+    let fact: Fact
     
     var body: some View {
-        VStack(spacing: 12) {
-            if hasSeenFactToday, let category = category {
-                VStack(spacing: 8) {
-                    Text(category.icon)
-                        .font(.system(size: 44))
-                    
-                    Text("You've learned about \(category.name) today!")
-                        .font(.headline)
-                        .foregroundColor(category.color)
-                    
-                    Text("Tap the \(category.name) card to view it again")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-            } else {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 40))
-                    .foregroundColor(.orange)
-                
-                Text("Ready to learn something new?")
-                    .font(.headline)
-                
-                Text("Choose a category below")
-                    .font(.subheadline)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(fact.content)
+                .font(.body)
+                .padding()
+            
+            HStack {
+                Text("Source: \(fact.source)")
+                    .font(.caption)
                     .foregroundColor(.secondary)
+                Spacer()
+                if let url = fact.url {
+                    Link("Learn More", destination: URL(string: url)!)
+                        .font(.caption)
+                }
             }
+            .padding(.horizontal)
+            .padding(.bottom)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(.systemBackground))
-                .shadow(color: (category?.color ?? .black).opacity(0.1), radius: 10)
-        )
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(radius: 5)
         .padding(.horizontal)
     }
 }
 
-struct CategoryCard: View {
-    let category: Category
-    let isSelected: Bool
-    @State private var isPressed = false
+struct RelatedArticlesView: View {
+    let articles: [RelatedArticle]
     
     var body: some View {
-        VStack(spacing: 12) {
-            Text(category.icon)
-                .font(.system(size: 44))
-                .rotationEffect(.degrees(isPressed ? 8 : 0))
-            
-            Text(category.name)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Related Articles")
                 .font(.headline)
-                .foregroundColor(category.color)
+                .padding(.horizontal)
             
-            if isSelected {
-                Text("View again")
-                    .font(.caption)
-                    .foregroundColor(category.color)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(category.color.opacity(0.1))
-                    )
-            } else {
-                Text("Tap to explore")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(articles) { article in
+                        ArticleCard(article: article)
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+}
+
+struct ArticleCard: View {
+    let article: RelatedArticle
+    
+    var body: some View {
+        Link(destination: URL(string: article.url)!) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let imageUrl = article.imageUrl {
+                    AsyncImage(url: URL(string: imageUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.gray.opacity(0.3)
+                    }
+                    .frame(width: 200, height: 120)
+                    .cornerRadius(8)
+                }
+                
+                Text(article.title)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .frame(width: 200, alignment: .leading)
+                
+                Text(article.source)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            .frame(width: 200)
         }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(1, contentMode: .fit)
-        .padding()
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: category.color.opacity(0.2), radius: 10)
+    }
+}
+
+struct ChatView: View {
+    @ObservedObject var viewModel: FactViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var messageText = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(viewModel.chatMessages) { message in
+                            MessageBubble(message: message.content, isUser: message.isUser)
+                        }
+                    }
+                    .padding()
+                }
                 
-                // Gradient overlay
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                category.color.opacity(isSelected ? 0.2 : 0.1),
-                                Color(.systemBackground).opacity(0.8)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                HStack {
+                    TextField("Ask about this fact...", text: $messageText)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                    
+                    Button(action: {
+                        let message = messageText
+                        messageText = ""
+                        Task {
+                            await viewModel.sendChatMessage(message)
+                        }
+                    }) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title)
+                    }
+                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding()
             }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(category.color.opacity(isSelected ? 0.4 : 0.2), lineWidth: isSelected ? 2 : 1)
-        )
-        .pressAnimation(isPressed: isPressed)
-        .scaleEffect(isSelected ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
+            .navigationTitle("Chat with AI")
+            .navigationBarItems(trailing: Button("Done") { dismiss() })
+        }
     }
 }
 
 struct FactDetailView: View {
+    let fact: Fact
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var viewModel: FactViewModel
-    @State private var showContent = false
-    @State private var showRelatedArticles = false
-    
-    let category: Category
     
     var body: some View {
         NavigationView {
-            ZStack {
-                // Background gradient
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        category.color.opacity(0.1),
-                        Color(.systemBackground)
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
-                
-                if viewModel.isLoading {
-                    LoadingView()
-                        .transition(.opacity)
-                } else if let fact = viewModel.currentFact {
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            // Category icon
-                            Text(category.icon)
-                                .font(.system(size: 60))
-                                .opacity(showContent ? 1 : 0)
-                                .offset(y: showContent ? 0 : 20)
-                            
-                            // Fact card
-                            FactCard(fact: fact)
-                                .opacity(showContent ? 1 : 0)
-                                .offset(y: showContent ? 0 : 40)
-                            
-                            // Related articles
-                            if !fact.relatedArticles.isEmpty {
-                                RelatedArticlesCard(articles: fact.relatedArticles)
-                                    .opacity(showRelatedArticles ? 1 : 0)
-                                    .offset(y: showRelatedArticles ? 0 : 60)
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(fact.content)
+                        .font(.body)
                         .padding()
-                    }
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .move(edge: .bottom)),
-                        removal: .opacity.combined(with: .move(edge: .bottom))
-                    ))
-                } else if let error = viewModel.errorMessage {
-                    ErrorView(message: error) {
-                        Task {
-                            try? await viewModel.fetchFactByCategory(category.name)
-                        }
-                    }
-                    .transition(.opacity)
-                }
-            }
-            .navigationTitle(category.name)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            dismiss()
-                        }
-                    }
-                }
-            }
-        }
-        .task {
-            try? await viewModel.fetchFactByCategory(category.name)
-            withAnimation(.easeOut(duration: 0.5)) {
-                showContent = true
-            }
-            withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
-                showRelatedArticles = true
-            }
-        }
-    }
-}
-
-// MARK: - Supporting Views
-private struct BackgroundView: View {
-    var body: some View {
-        Color(.systemGroupedBackground)
-            .ignoresSafeArea()
-    }
-}
-
-private struct LoadingView: View {
-    var body: some View {
-        ProgressView()
-            .scaleEffect(1.5)
-    }
-}
-
-private struct ErrorView: View {
-    let message: String
-    let retryAction: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.largeTitle)
-                .foregroundColor(.orange)
-            Text(message)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-            Button("Try Again", action: retryAction)
-                .buttonStyle(.bordered)
-        }
-        .padding()
-    }
-}
-
-private struct FactCard: View {
-    let fact: Fact
-    
-    var categoryIcon: String {
-        switch fact.category {
-        case "Science": return "🧬"
-        case "History": return "📜"
-        case "Technology": return "💻"
-        case "Space": return "🌌"
-        case "Nature": return "🌿"
-        case "Art": return "🎨"
-        case "Literature": return "📚"
-        default: return "💡"
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("\(categoryIcon) \(fact.category)")
-                    .font(.headline)
-                    .foregroundColor(.blue)
-                Spacer()
-            }
-            
-            Text(fact.content)
-                .font(.body)
-                .multilineTextAlignment(.leading)
-            
-            Text("Source: \(fact.source)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            if let url = fact.url {
-                Link("Read More", destination: URL(string: url)!)
-                    .font(.caption)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 5)
-    }
-}
-
-private struct RelatedArticlesCard: View {
-    let articles: [RelatedArticle]
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Related Articles")
-                .font(.headline)
-            
-            ForEach(articles) { article in
-                VStack(alignment: .leading, spacing: 8) {
-                    if let imageUrl = article.imageUrl,
-                       let url = URL(string: imageUrl) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Color.gray.opacity(0.3)
-                        }
-                        .frame(height: 150)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
                     
-                    Link(destination: URL(string: article.url)!) {
-                        Text(article.title)
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Source Information")
                             .font(.headline)
-                            .foregroundColor(.primary)
+                        Text("From: \(fact.source)")
+                        if let url = fact.url {
+                            Link("Original Article", destination: URL(string: url)!)
+                        }
                     }
-                    
-                    Text(article.snippet)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Source: \(article.source)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    .padding()
                 }
             }
+            .navigationTitle("Today's Fact")
+            .navigationBarItems(trailing: Button("Done") { dismiss() })
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 5)
     }
 }
 

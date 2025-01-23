@@ -21,9 +21,3 @@ struct Fact: Codable, Identifiable {
         case relatedArticles
     }
 }
-
-// API Response models
-struct APIResponse<T: Codable>: Codable {
-    let success: Bool
-    let data: T
-}

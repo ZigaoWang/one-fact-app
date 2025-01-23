@@ -6,56 +6,73 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	"github.com/zigaowang/one-fact/internal/database"
-	"github.com/zigaowang/one-fact/internal/handlers"
+	"github.com/ZigaoWang/one-fact-app/internal/database"
+	"github.com/ZigaoWang/one-fact-app/internal/handlers"
 )
 
 func main() {
-	// Load .env file
+	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: .env file not found")
 	}
 
-	// Initialize database
+	// Initialize database connection
 	db, err := database.InitDB()
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Create router
-	r := gin.Default()
-
-	// Initialize handlers
+	// Create handler instance
 	h := handlers.NewHandler(db)
 
-	// API routes
-	api := r.Group("/api")
-	{
-		// Facts endpoints
-		facts := api.Group("/facts")
-		{
-			facts.GET("/daily", h.GetDailyFact)
-			facts.GET("/random", h.GetRandomFact)
-			facts.GET("/category/:category", h.GetFactsByCategory)
+	// Initialize Gin router
+	r := gin.Default()
+
+	// Add CORS middleware
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
 		}
 
-		// Admin endpoints (to be protected)
-		admin := api.Group("/admin")
-		{
-			admin.POST("/facts", h.CreateFact)
-			admin.PUT("/facts/:id", h.UpdateFact)
-			admin.DELETE("/facts/:id", h.DeleteFact)
-		}
+		c.Next()
+	})
+
+	// Add response headers middleware
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+		c.Next()
+	})
+
+	// Define API routes
+	api := r.Group("/api")
+	{
+		// Core endpoints
+		api.GET("/fact/daily", h.GetDailyFact)
+		api.GET("/fact/articles", h.GetRelatedArticles)
+		api.POST("/chat/message", h.HandleChatMessage)
+		api.GET("/chat/context", h.GetFactContext)
 	}
 
 	// Get port from env or use default
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "5000"
 	}
 
-	// Start server
-	if err := r.Run(":" + port); err != nil {
+	// Configure Gin to properly format JSON responses
+	gin.SetMode(gin.ReleaseMode)
+	r.Use(gin.Recovery())
+
+	// Start the server
+	log.Printf("Starting server on port %s...\n", port)
+	if err := r.Run("0.0.0.0:" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

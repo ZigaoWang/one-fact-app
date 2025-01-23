@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-	"github.com/zigaowang/one-fact/internal/models"
+	"github.com/ZigaoWang/one-fact-app/internal/models"
 )
 
 type Handler struct {
@@ -151,5 +153,99 @@ func (h *Handler) DeleteFact(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Fact deleted successfully",
+	})
+}
+
+// GetRelatedArticles returns related articles for a fact
+func (h *Handler) GetRelatedArticles(c *gin.Context) {
+	factIDStr := c.Query("factId")
+	if factIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "factId is required",
+		})
+		return
+	}
+
+	factID, err := strconv.Atoi(factIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid factId",
+		})
+		return
+	}
+
+	var articles []models.RelatedArticle
+	result := h.db.Where("fact_id = ?", factID).Find(&articles)
+	if result.Error != nil {
+		log.Printf("Error getting related articles: %v", result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get related articles",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    articles,
+	})
+}
+
+// HandleChatMessage handles chat messages about facts
+func (h *Handler) HandleChatMessage(c *gin.Context) {
+	var request struct {
+		Message string `json:"message" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request",
+		})
+		return
+	}
+
+	// For now, return a simple response
+	// TODO: Integrate with an AI service
+	response := "I'm sorry, but I'm still learning about this fact. Could you try asking something else?"
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
+}
+
+// GetFactContext returns additional context about the current fact
+func (h *Handler) GetFactContext(c *gin.Context) {
+	factIDStr := c.Query("factId")
+	if factIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "factId is required",
+		})
+		return
+	}
+
+	id, err := strconv.Atoi(factIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid factId",
+		})
+		return
+	}
+
+	var fact models.Fact
+	result := h.db.First(&fact, id)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Fact not found",
+		})
+		return
+	}
+
+	// For now, return a simple context
+	// TODO: Generate or fetch more detailed context
+	context := "This is an interesting fact about " + fact.Category
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    context,
 	})
 }

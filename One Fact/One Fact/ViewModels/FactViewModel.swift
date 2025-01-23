@@ -4,65 +4,70 @@ import Foundation
 @MainActor
 class FactViewModel: ObservableObject {
     @Published var currentFact: Fact?
+    @Published var relatedArticles: [RelatedArticle] = []
+    @Published var chatMessages: [ChatMessage] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var hasSeenFactToday = false
-    @Published var todaysCategory: Category?
     
     private let factService: FactService
     private let defaults = UserDefaults.standard
-    
-    let categories: [Category] = [
-        Category(name: "Science", icon: "🔬", color: .blue),
-        Category(name: "History", icon: "📜", color: .brown),
-        Category(name: "Technology", icon: "💻", color: .purple),
-        Category(name: "Nature", icon: "🌿", color: .green),
-        Category(name: "Space", icon: "🚀", color: .indigo),
-        Category(name: "Art", icon: "🎨", color: .pink)
-    ]
     
     init() {
         self.factService = FactService()
         checkDailyFactStatus()
     }
     
-    func checkDailyFactStatus() {
+    public func checkDailyFactStatus() {
         let lastSeenDate = defaults.object(forKey: "LastSeenFactDate") as? Date ?? Date.distantPast
-        let categoryName = defaults.string(forKey: "TodaysCategoryName")
-        
         hasSeenFactToday = Calendar.current.isDate(lastSeenDate, inSameDayAs: Date())
         
-        if hasSeenFactToday, let categoryName = categoryName {
-            todaysCategory = categories.first { $0.name == categoryName }
-        } else {
-            todaysCategory = nil
-            hasSeenFactToday = false
+        if !hasSeenFactToday {
+            Task {
+                await fetchDailyFact()
+            }
         }
     }
     
-    func fetchFactByCategory(_ category: String) async throws {
+    func fetchDailyFact() async {
         isLoading = true
         errorMessage = nil
         
         do {
-            let fact = try await factService.fetchFactByCategory(category)
+            let fact = try await factService.fetchDailyFact()
             currentFact = fact
             defaults.set(Date(), forKey: "LastSeenFactDate")
-            defaults.set(category, forKey: "TodaysCategoryName")
-            hasSeenFactToday = true
-            todaysCategory = categories.first { $0.name == category }
-            isLoading = false
+            await fetchRelatedArticles()
         } catch {
-            errorMessage = "Failed to fetch fact: \(error.localizedDescription)"
-            isLoading = false
+            errorMessage = "Failed to fetch daily fact: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+    
+    func fetchRelatedArticles() async {
+        guard let fact = currentFact else { return }
+        
+        do {
+            relatedArticles = try await factService.fetchRelatedArticles(for: fact.id)
+        } catch {
+            errorMessage = "Failed to fetch related articles"
         }
     }
     
-    func canViewCategory(_ category: Category) -> Bool {
-        if !hasSeenFactToday {
-            return true
+    func sendChatMessage(_ message: String) async {
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        
+        let userMessage = ChatMessage(content: message, isUser: true)
+        chatMessages.append(userMessage)
+        
+        do {
+            let response = try await factService.sendChatMessage(message)
+            let aiMessage = ChatMessage(content: response, isUser: false)
+            chatMessages.append(aiMessage)
+        } catch {
+            errorMessage = "Failed to get AI response"
         }
-        return todaysCategory?.name == category.name
     }
 }
 

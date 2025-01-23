@@ -1,4 +1,4 @@
-module github.com/zigaowang/one-fact
+module github.com/ZigaoWang/one-fact-app
 
 go 1.22
 
