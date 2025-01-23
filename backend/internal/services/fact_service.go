@@ -145,3 +145,28 @@ func (s *FactService) GetFactsByCategory(ctx context.Context, category string) (
 	// Return all facts in the category
 	return categoryFacts, nil
 }
+
+// GetDailyFactByCategory returns the fact for the current day for a specific category
+func (s *FactService) GetDailyFactByCategory(ctx context.Context, category string) (*models.Fact, error) {
+    s.RLock()
+    defer s.RUnlock()
+
+    today := time.Now().UTC().Truncate(24 * time.Hour)
+    
+    var categoryFacts []*models.Fact
+    for _, fact := range s.facts {
+        if strings.EqualFold(fact.Category, category) && fact.Active {
+            categoryFacts = append(categoryFacts, fact)
+        }
+    }
+
+    if len(categoryFacts) == 0 {
+        return nil, fmt.Errorf("no facts available for category: %s", category)
+    }
+
+    // Use the day of the year to deterministically select a fact
+    // This ensures all users get the same fact for this category on a given day
+    dayOfYear := today.YearDay()
+    selectedIndex := dayOfYear % len(categoryFacts)
+    return categoryFacts[selectedIndex], nil
+}

@@ -8,6 +8,7 @@ class FactViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var hasSeenFactToday = false
     @Published var todaysCategory: Category?
+    @Published var seenCategories: Set<String> = []
     
     private let factService: FactService
     private let defaults = UserDefaults.standard
@@ -23,17 +24,29 @@ class FactViewModel: ObservableObject {
     
     init() {
         self.factService = FactService()
+        loadSeenCategories()
         checkDailyFactStatus()
     }
     
+    private func loadSeenCategories() {
+        if let savedDate = defaults.object(forKey: "LastSeenFactsDate") as? Date,
+           Calendar.current.isDate(savedDate, inSameDayAs: Date()) {
+            seenCategories = Set(defaults.stringArray(forKey: "TodaysSeenCategories") ?? [])
+        } else {
+            // Reset seen categories for new day
+            seenCategories.removeAll()
+            defaults.set(Date(), forKey: "LastSeenFactsDate")
+            defaults.set([], forKey: "TodaysSeenCategories")
+        }
+    }
+    
     func checkDailyFactStatus() {
-        let lastSeenDate = defaults.object(forKey: "LastSeenFactDate") as? Date ?? Date.distantPast
-        let categoryName = defaults.string(forKey: "TodaysCategoryName")
+        loadSeenCategories()
         
-        hasSeenFactToday = Calendar.current.isDate(lastSeenDate, inSameDayAs: Date())
-        
-        if hasSeenFactToday, let categoryName = categoryName {
+        if let categoryName = defaults.string(forKey: "LastSeenCategoryName"),
+           seenCategories.contains(categoryName) {
             todaysCategory = categories.first { $0.name == categoryName }
+            hasSeenFactToday = true
         } else {
             todaysCategory = nil
             hasSeenFactToday = false
@@ -47,8 +60,12 @@ class FactViewModel: ObservableObject {
         do {
             let fact = try await factService.fetchFactByCategory(category)
             currentFact = fact
-            defaults.set(Date(), forKey: "LastSeenFactDate")
-            defaults.set(category, forKey: "TodaysCategoryName")
+            
+            // Update seen categories
+            seenCategories.insert(category)
+            defaults.set(Array(seenCategories), forKey: "TodaysSeenCategories")
+            defaults.set(category, forKey: "LastSeenCategoryName")
+            
             hasSeenFactToday = true
             todaysCategory = categories.first { $0.name == category }
             isLoading = false
@@ -59,10 +76,24 @@ class FactViewModel: ObservableObject {
     }
     
     func canViewCategory(_ category: Category) -> Bool {
-        if !hasSeenFactToday {
+        // Can view if we haven't seen any facts today
+        if seenCategories.isEmpty {
             return true
         }
-        return todaysCategory?.name == category.name
+        
+        // Can only view categories we've already seen today
+        return seenCategories.contains(category.name)
+    }
+    
+    // Call this when app becomes active
+    func refreshDailyStatus() {
+        loadSeenCategories()
+        checkDailyFactStatus()
+        
+        // Clear cache if it's a new day
+        if seenCategories.isEmpty {
+            factService.clearCache()
+        }
     }
 }
 

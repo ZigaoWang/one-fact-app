@@ -150,3 +150,21 @@ func (h *FactHandler) GetFactsByCategory(c *gin.Context) {
 		"data": facts,
 	})
 }
+
+// GetDailyFactByCategory handles GET /api/facts/category/:category/daily
+func (h *FactHandler) GetDailyFactByCategory(c *gin.Context) {
+	category := c.Param("category")
+	fact, err := h.factService.GetDailyFactByCategory(c.Request.Context(), category)
+	if err != nil {
+		respondWithJSON(c, http.StatusNotFound, gin.H{
+			"success": false,
+			"error": err.Error(),
+		})
+		return
+	}
+
+	respondWithJSON(c, http.StatusOK, gin.H{
+		"success": true,
+		"data": fact,
+	})
+}

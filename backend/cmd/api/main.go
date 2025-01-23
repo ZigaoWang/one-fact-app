@@ -59,6 +59,7 @@ func main() {
 			facts.GET("/daily", factHandler.GetDailyFact)
 			facts.GET("/random", factHandler.GetRandomFact)
 			facts.GET("/category/:category", factHandler.GetFactsByCategory)
+			facts.GET("/category/:category/daily", factHandler.GetDailyFactByCategory)
 		}
 
 		// Admin endpoints (to be protected)
