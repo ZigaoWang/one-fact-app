@@ -43,8 +43,11 @@ func (s *FactService) GetDailyFact(ctx context.Context) (*models.Fact, error) {
 		return nil, errors.New("no fact available for today")
 	}
 
-	// Return a random fact from today's facts
-	return todayFacts[rand.Intn(len(todayFacts))], nil
+	// Use the day of the year to deterministically select a fact
+	// This ensures all users get the same fact on a given day
+	dayOfYear := today.YearDay()
+	selectedIndex := dayOfYear % len(todayFacts)
+	return todayFacts[selectedIndex], nil
 }
 
 // GetRandomFact returns a random published fact
