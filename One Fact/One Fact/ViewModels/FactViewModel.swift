@@ -6,6 +6,7 @@ class FactViewModel: ObservableObject {
     @Published var currentFact: Fact?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var showError = false
     @Published var hasSeenFactToday = false
     @Published var todaysCategory: Category?
     @Published var seenCategories: Set<String> = []
@@ -53,9 +54,10 @@ class FactViewModel: ObservableObject {
         }
     }
     
-    func fetchFactByCategory(_ category: String) async throws {
+    func fetchFactByCategory(_ category: String) async {
         isLoading = true
         errorMessage = nil
+        showError = false
         
         do {
             let fact = try await factService.fetchFactByCategory(category)
@@ -68,11 +70,17 @@ class FactViewModel: ObservableObject {
             
             hasSeenFactToday = true
             todaysCategory = categories.first { $0.name == category }
-            isLoading = false
+        } catch let error as APIError {
+            errorMessage = error.localizedDescription
+            showError = true
+            print("API Error: \(error.localizedDescription)")
         } catch {
-            errorMessage = "Failed to fetch fact: \(error.localizedDescription)"
-            isLoading = false
+            errorMessage = "An unexpected error occurred"
+            showError = true
+            print("Unexpected error: \(error.localizedDescription)")
         }
+        
+        isLoading = false
     }
     
     func canViewCategory(_ category: Category) -> Bool {

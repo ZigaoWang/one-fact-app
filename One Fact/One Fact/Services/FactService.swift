@@ -1,15 +1,28 @@
 import Foundation
 
-enum APIError: Error {
+enum APIError: Error, LocalizedError {
     case invalidURL
     case noData
     case decodingError
     case serverError(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidURL:
+            return "Invalid URL"
+        case .noData:
+            return "No data received"
+        case .decodingError:
+            return "Failed to decode response"
+        case .serverError(let message):
+            return "Server error: \(message)"
+        }
+    }
 }
 
 @MainActor
 class FactService: ObservableObject {
-    private let baseURL = "http://localhost:8080/api/facts"
+    private let baseURL = "https://backend-broken-water-316.fly.dev/api/facts"
     private let cache = NSCache<NSString, CachedFact>()
     private let defaults = UserDefaults.standard
     
@@ -35,21 +48,24 @@ class FactService: ObservableObject {
         
         let (data, response) = try await URLSession.shared.data(from: url)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError("Server returned an error")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError("Server returned status code \(httpResponse.statusCode)")
         }
         
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         
-        struct APIResponse: Codable {
-            let success: Bool
-            let data: Fact
+        do {
+            print("Response data: \(String(data: data, encoding: .utf8) ?? "nil")")
+            return try decoder.decode(Fact.self, from: data)
+        } catch {
+            print("Decoding error: \(error)")
+            throw APIError.decodingError
         }
-        
-        let apiResponse = try decoder.decode(APIResponse.self, from: data)
-        return apiResponse.data
     }
     
     func fetchFactByCategory(_ category: String) async throws -> Fact {
@@ -67,26 +83,27 @@ class FactService: ObservableObject {
         
         let (data, response) = try await URLSession.shared.data(from: url)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError("Server returned an error")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError("Invalid response")
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError("Server returned status code \(httpResponse.statusCode)")
         }
         
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         
-        struct APIResponse: Codable {
-            let success: Bool
-            let data: Fact
+        do {
+            print("Response data: \(String(data: data, encoding: .utf8) ?? "nil")")
+            let fact = try decoder.decode(Fact.self, from: data)
+            // Cache the result
+            cache.setObject(CachedFact(fact: fact, timestamp: Date()), forKey: category as NSString)
+            return fact
+        } catch {
+            print("Decoding error: \(error)")
+            throw APIError.decodingError
         }
-        
-        let apiResponse = try decoder.decode(APIResponse.self, from: data)
-        let fact = apiResponse.data
-        
-        // Cache the result
-        cache.setObject(CachedFact(fact: fact, timestamp: Date()), forKey: category as NSString)
-        
-        return fact
     }
     
     func clearCache() {

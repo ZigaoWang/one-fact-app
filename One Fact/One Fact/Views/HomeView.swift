@@ -97,6 +97,11 @@ struct HomeView: View {
         } message: {
             Text("Discover an interesting fact about \(selectedCategory?.name ?? "this topic")!")
         }
+        .alert("Error", isPresented: $viewModel.showError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "An unknown error occurred")
+        }
     }
     
     private var mainContent: some View {

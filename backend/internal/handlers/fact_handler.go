@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"net/http"
-	"encoding/json"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
@@ -19,152 +19,89 @@ func NewFactHandler(factService *services.FactService) *FactHandler {
 	}
 }
 
-// Custom JSON response function that formats dates in ISO 8601
-func respondWithJSON(c *gin.Context, code int, obj interface{}) {
-	c.Writer.Header().Set("Content-Type", "application/json")
-	c.Writer.WriteHeader(code)
-
-	encoder := json.NewEncoder(c.Writer)
-	encoder.SetIndent("", "  ")
-	encoder.Encode(obj)
-}
-
-// GetDailyFact handles GET /api/facts/daily
 func (h *FactHandler) GetDailyFact(c *gin.Context) {
 	fact, err := h.factService.GetDailyFact(c.Request.Context())
 	if err != nil {
-		respondWithJSON(c, http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	respondWithJSON(c, http.StatusOK, gin.H{
-		"success": true,
-		"data": fact,
-	})
+	// Use gin's JSON method with proper indentation
+	c.IndentedJSON(http.StatusOK, fact)
 }
 
-// GetRandomFact handles GET /api/facts/random
 func (h *FactHandler) GetRandomFact(c *gin.Context) {
 	fact, err := h.factService.GetRandomFact(c.Request.Context())
 	if err != nil {
-		respondWithJSON(c, http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	respondWithJSON(c, http.StatusOK, gin.H{
-		"success": true,
-		"data": fact,
-	})
+	c.IndentedJSON(http.StatusOK, fact)
 }
 
-// CreateFact handles POST /api/admin/facts
-func (h *FactHandler) CreateFact(c *gin.Context) {
-	var fact models.Fact
-	if err := c.ShouldBindJSON(&fact); err != nil {
-		respondWithJSON(c, http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if err := h.factService.CreateFact(c.Request.Context(), &fact); err != nil {
-		respondWithJSON(c, http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
-		return
-	}
-
-	respondWithJSON(c, http.StatusCreated, gin.H{
-		"success": true,
-		"data": fact,
-	})
-}
-
-// UpdateFact handles PUT /api/admin/facts/:id
-func (h *FactHandler) UpdateFact(c *gin.Context) {
-	id := c.Param("id")
-	var fact models.Fact
-	if err := c.ShouldBindJSON(&fact); err != nil {
-		respondWithJSON(c, http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if err := h.factService.UpdateFact(c.Request.Context(), id, &fact); err != nil {
-		respondWithJSON(c, http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
-		return
-	}
-
-	respondWithJSON(c, http.StatusOK, gin.H{
-		"success": true,
-		"data": fact,
-	})
-}
-
-// DeleteFact handles DELETE /api/admin/facts/:id
-func (h *FactHandler) DeleteFact(c *gin.Context) {
-	id := c.Param("id")
-
-	if err := h.factService.DeleteFact(c.Request.Context(), id); err != nil {
-		respondWithJSON(c, http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
-		return
-	}
-
-	respondWithJSON(c, http.StatusOK, gin.H{
-		"success": true,
-		"data": nil,
-	})
-}
-
-// GetFactsByCategory handles GET /api/facts/category/:category
 func (h *FactHandler) GetFactsByCategory(c *gin.Context) {
 	category := c.Param("category")
 	facts, err := h.factService.GetFactsByCategory(c.Request.Context(), category)
 	if err != nil {
-		respondWithJSON(c, http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Return all facts in the category
-	respondWithJSON(c, http.StatusOK, gin.H{
-		"success": true,
-		"data": facts,
-	})
+	c.IndentedJSON(http.StatusOK, facts)
 }
 
-// GetDailyFactByCategory handles GET /api/facts/category/:category/daily
 func (h *FactHandler) GetDailyFactByCategory(c *gin.Context) {
 	category := c.Param("category")
 	fact, err := h.factService.GetDailyFactByCategory(c.Request.Context(), category)
 	if err != nil {
-		respondWithJSON(c, http.StatusNotFound, gin.H{
-			"success": false,
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.IndentedJSON(http.StatusOK, fact)
+}
+
+func (h *FactHandler) CreateFact(c *gin.Context) {
+	var fact models.Fact
+	if err := c.ShouldBindJSON(&fact); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	respondWithJSON(c, http.StatusOK, gin.H{
-		"success": true,
-		"data": fact,
-	})
+	if err := h.factService.CreateFact(c.Request.Context(), &fact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusCreated, fact)
+}
+
+func (h *FactHandler) UpdateFact(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fact ID"})
+		return
+	}
+
+	var fact models.Fact
+	if err := c.ShouldBindJSON(&fact); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	fact.ID = id
+	if err := h.factService.UpdateFact(c.Request.Context(), idStr, &fact); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, fact)
+}
+
+func (h *FactHandler) DeleteFact(c *gin.Context) {
+	idStr := c.Param("id")
+	if err := h.factService.DeleteFact(c.Request.Context(), idStr); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

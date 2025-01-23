@@ -2,171 +2,230 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"fmt"
-	"math/rand"
-	"strings"
-	"sync"
 	"time"
 
+	"github.com/ZigaoWang/one-fact-app/backend/internal/database"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
 )
 
 type FactService struct {
-	sync.RWMutex
-	facts map[int]*models.Fact
-	lastID int
+	db *database.Database
 }
 
-func NewFactService(db interface{}) *FactService {
-	return &FactService{
-		facts: make(map[int]*models.Fact),
-		lastID: 0,
-	}
+func NewFactService(db *database.Database) *FactService {
+	return &FactService{db: db}
 }
 
-// GetDailyFact returns the fact for the current day
-func (s *FactService) GetDailyFact(ctx context.Context) (*models.Fact, error) {
-	s.RLock()
-	defer s.RUnlock()
-
-	today := time.Now().UTC().Truncate(24 * time.Hour)
-	
-	var todayFacts []*models.Fact
-	for _, fact := range s.facts {
-		if fact.DisplayDate.Truncate(24 * time.Hour).Equal(today) && fact.Active {
-			todayFacts = append(todayFacts, fact)
-		}
-	}
-
-	if len(todayFacts) == 0 {
-		return nil, errors.New("no fact available for today")
-	}
-
-	// Use the day of the year to deterministically select a fact
-	// This ensures all users get the same fact on a given day
-	dayOfYear := today.YearDay()
-	selectedIndex := dayOfYear % len(todayFacts)
-	return todayFacts[selectedIndex], nil
-}
-
-// GetRandomFact returns a random published fact
-func (s *FactService) GetRandomFact(ctx context.Context) (*models.Fact, error) {
-	s.RLock()
-	defer s.RUnlock()
-
-	var activeFacts []*models.Fact
-	for _, fact := range s.facts {
-		if fact.Active {
-			activeFacts = append(activeFacts, fact)
-		}
-	}
-
-	if len(activeFacts) == 0 {
-		return nil, errors.New("no facts available")
-	}
-
-	return activeFacts[rand.Intn(len(activeFacts))], nil
-}
-
-// CreateFact creates a new fact
 func (s *FactService) CreateFact(ctx context.Context, fact *models.Fact) error {
-	s.Lock()
-	defer s.Unlock()
-
-	if fact.ID == 0 {
-		s.lastID++
-		fact.ID = s.lastID
-	} else if fact.ID > s.lastID {
-		s.lastID = fact.ID
-	}
-	
-	s.facts[fact.ID] = fact
-	return nil
-}
-
-// UpdateFact updates an existing fact
-func (s *FactService) UpdateFact(ctx context.Context, id string, fact *models.Fact) error {
-	s.Lock()
-	defer s.Unlock()
-
-	factID := 0
-	_, err := fmt.Sscanf(id, "%d", &factID)
+	tx, err := s.db.DB().BeginTx(ctx, nil)
 	if err != nil {
-		return errors.New("invalid fact ID")
+		return err
 	}
+	defer tx.Rollback()
 
-	if _, exists := s.facts[factID]; !exists {
-		return errors.New("fact not found")
-	}
-
-	fact.ID = factID
-	s.facts[factID] = fact
-	return nil
-}
-
-// DeleteFact deletes a fact by ID
-func (s *FactService) DeleteFact(ctx context.Context, id string) error {
-	s.Lock()
-	defer s.Unlock()
-
-	factID := 0
-	_, err := fmt.Sscanf(id, "%d", &factID)
+	// Insert fact
+	var factID int
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO facts (content, category, source, display_date, active)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, fact.Content, fact.Category, fact.Source, fact.DisplayDate, fact.Active).Scan(&factID)
 	if err != nil {
-		return errors.New("invalid fact ID")
+		return err
 	}
 
-	if _, exists := s.facts[factID]; !exists {
-		return errors.New("fact not found")
-	}
-
-	delete(s.facts, factID)
-	return nil
-}
-
-// GetFactsByCategory returns all facts in a given category
-func (s *FactService) GetFactsByCategory(ctx context.Context, category string) ([]*models.Fact, error) {
-	s.RLock()
-	defer s.RUnlock()
-
-	var categoryFacts []*models.Fact
-	searchCategory := strings.ToLower(category)
-	
-	for _, fact := range s.facts {
-		if fact.Active && strings.ToLower(fact.Category) == searchCategory {
-			categoryFacts = append(categoryFacts, fact)
+	// Insert related articles
+	for _, article := range fact.RelatedArticles {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO related_articles (fact_id, title, url, source, snippet)
+			VALUES ($1, $2, $3, $4, $5)
+		`, factID, article.Title, article.URL, article.Source, article.Snippet)
+		if err != nil {
+			return err
 		}
 	}
 
-	if len(categoryFacts) == 0 {
-		return []*models.Fact{}, nil
-	}
-
-	// Return all facts in the category
-	return categoryFacts, nil
+	return tx.Commit()
 }
 
-// GetDailyFactByCategory returns the fact for the current day for a specific category
+func (s *FactService) GetFactsByCategory(ctx context.Context, category string) ([]models.Fact, error) {
+	rows, err := s.db.DB().QueryContext(ctx, `
+		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
+			   ra.id, ra.title, ra.url, ra.source, ra.snippet
+		FROM facts f
+		LEFT JOIN related_articles ra ON f.id = ra.fact_id
+		WHERE f.category = $1 AND f.active = true
+		ORDER BY f.display_date DESC
+	`, category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return s.scanFacts(rows)
+}
+
+func (s *FactService) GetDailyFact(ctx context.Context) (*models.Fact, error) {
+	row := s.db.DB().QueryRowContext(ctx, `
+		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
+			   ra.id, ra.title, ra.url, ra.source, ra.snippet
+		FROM facts f
+		LEFT JOIN related_articles ra ON f.id = ra.fact_id
+		WHERE f.active = true AND f.display_date <= $1
+		ORDER BY f.display_date DESC
+		LIMIT 1
+	`, time.Now())
+
+	facts, err := s.scanFact(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("no fact found")
+		}
+		return nil, err
+	}
+
+	return facts, nil
+}
+
 func (s *FactService) GetDailyFactByCategory(ctx context.Context, category string) (*models.Fact, error) {
-    s.RLock()
-    defer s.RUnlock()
+	row := s.db.DB().QueryRowContext(ctx, `
+		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
+			   ra.id, ra.title, ra.url, ra.source, ra.snippet
+		FROM facts f
+		LEFT JOIN related_articles ra ON f.id = ra.fact_id
+		WHERE f.category = $1 AND f.active = true AND f.display_date <= $2
+		ORDER BY f.display_date DESC
+		LIMIT 1
+	`, category, time.Now())
 
-    today := time.Now().UTC().Truncate(24 * time.Hour)
-    
-    var categoryFacts []*models.Fact
-    for _, fact := range s.facts {
-        if strings.EqualFold(fact.Category, category) && fact.Active {
-            categoryFacts = append(categoryFacts, fact)
-        }
-    }
+	facts, err := s.scanFact(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("no fact found")
+		}
+		return nil, err
+	}
 
-    if len(categoryFacts) == 0 {
-        return nil, fmt.Errorf("no facts available for category: %s", category)
-    }
+	return facts, nil
+}
 
-    // Use the day of the year to deterministically select a fact
-    // This ensures all users get the same fact for this category on a given day
-    dayOfYear := today.YearDay()
-    selectedIndex := dayOfYear % len(categoryFacts)
-    return categoryFacts[selectedIndex], nil
+func (s *FactService) GetRandomFact(ctx context.Context) (*models.Fact, error) {
+	row := s.db.DB().QueryRowContext(ctx, `
+		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
+			   ra.id, ra.title, ra.url, ra.source, ra.snippet
+		FROM facts f
+		LEFT JOIN related_articles ra ON f.id = ra.fact_id
+		WHERE f.active = true
+		ORDER BY RANDOM()
+		LIMIT 1
+	`)
+
+	facts, err := s.scanFact(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("no fact found")
+		}
+		return nil, err
+	}
+
+	return facts, nil
+}
+
+func (s *FactService) scanFacts(rows *sql.Rows) ([]models.Fact, error) {
+	facts := make(map[int]*models.Fact)
+
+	for rows.Next() {
+		var fact models.Fact
+		var article models.RelatedArticle
+		var articleID sql.NullInt64
+		var articleTitle, articleURL, articleSource, articleSnippet sql.NullString
+
+		err := rows.Scan(
+			&fact.ID, &fact.Content, &fact.Category, &fact.Source, &fact.DisplayDate, &fact.Active,
+			&articleID, &articleTitle, &articleURL, &articleSource, &articleSnippet,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if existingFact, ok := facts[fact.ID]; ok {
+			if articleID.Valid {
+				article = models.RelatedArticle{
+					ID:      int(articleID.Int64),
+					Title:   articleTitle.String,
+					URL:     articleURL.String,
+					Source:  articleSource.String,
+					Snippet: articleSnippet.String,
+				}
+				existingFact.RelatedArticles = append(existingFact.RelatedArticles, article)
+			}
+		} else {
+			fact.RelatedArticles = make([]models.RelatedArticle, 0)
+			if articleID.Valid {
+				article = models.RelatedArticle{
+					ID:      int(articleID.Int64),
+					Title:   articleTitle.String,
+					URL:     articleURL.String,
+					Source:  articleSource.String,
+					Snippet: articleSnippet.String,
+				}
+				fact.RelatedArticles = append(fact.RelatedArticles, article)
+			}
+			facts[fact.ID] = &fact
+		}
+	}
+
+	result := make([]models.Fact, 0, len(facts))
+	for _, fact := range facts {
+		result = append(result, *fact)
+	}
+	return result, nil
+}
+
+func (s *FactService) scanFact(row *sql.Row) (*models.Fact, error) {
+	var fact models.Fact
+	var article models.RelatedArticle
+	var articleID sql.NullInt64
+	var articleTitle, articleURL, articleSource, articleSnippet sql.NullString
+
+	err := row.Scan(
+		&fact.ID, &fact.Content, &fact.Category, &fact.Source, &fact.DisplayDate, &fact.Active,
+		&articleID, &articleTitle, &articleURL, &articleSource, &articleSnippet,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	fact.RelatedArticles = make([]models.RelatedArticle, 0)
+	if articleID.Valid {
+		article = models.RelatedArticle{
+			ID:      int(articleID.Int64),
+			Title:   articleTitle.String,
+			URL:     articleURL.String,
+			Source:  articleSource.String,
+			Snippet: articleSnippet.String,
+		}
+		fact.RelatedArticles = append(fact.RelatedArticles, article)
+	}
+
+	return &fact, nil
+}
+
+func (s *FactService) UpdateFact(ctx context.Context, id string, fact *models.Fact) error {
+	_, err := s.db.DB().ExecContext(ctx, `
+		UPDATE facts
+		SET content = $1, category = $2, source = $3, display_date = $4, active = $5
+		WHERE id = $6
+	`, fact.Content, fact.Category, fact.Source, fact.DisplayDate, fact.Active, id)
+	return err
+}
+
+func (s *FactService) DeleteFact(ctx context.Context, id string) error {
+	_, err := s.db.DB().ExecContext(ctx, `
+		DELETE FROM facts
+		WHERE id = $1
+	`, id)
+	return err
 }

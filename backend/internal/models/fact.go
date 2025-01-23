@@ -7,13 +7,12 @@ import (
 
 // Fact represents a single fact in the database
 type Fact struct {
-	ID             int               `json:"ID"`
-	Content        string           `json:"content"`
-	Category       string           `json:"category"`
-	Source         string           `json:"source"`
-	URL            *string          `json:"url,omitempty"`
-	DisplayDate    time.Time        `json:"displayDate,omitempty"`
-	Active         bool             `json:"active"`
+	ID             int             `json:"id"`
+	Content        string          `json:"content"`
+	Category       string          `json:"category"`
+	Source         string          `json:"source"`
+	DisplayDate    time.Time       `json:"displayDate"`
+	Active         bool            `json:"active"`
 	RelatedArticles []RelatedArticle `json:"relatedArticles"`
 }
 
@@ -53,10 +52,9 @@ func (f *Fact) UnmarshalJSON(data []byte) error {
 
 // RelatedArticle represents an article related to a fact
 type RelatedArticle struct {
-	ID       int     `json:"ID"`
-	Title    string  `json:"title"`
-	URL      string  `json:"url"`
-	Source   string  `json:"source"`
-	ImageURL *string `json:"imageUrl,omitempty"`
-	Snippet  string  `json:"snippet"`
+	ID      int    `json:"id"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Source  string `json:"source"`
+	Snippet string `json:"snippet"`
 }
