@@ -34,6 +34,13 @@ struct FactCardView: View {
         }
     }
     
+    var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: fact.displayDate)
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Category Header with Gradient and Shimmer
@@ -54,7 +61,7 @@ struct FactCardView: View {
                     Text(fact.category)
                         .font(.headline)
                         .foregroundColor(categoryColor)
-                    Text(fact.displayDate.formatted(date: .abbreviated, time: .omitted))
+                    Text(formattedDate)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -100,90 +107,62 @@ struct FactCardView: View {
                             .fill(categoryColor.opacity(0.1))
                             .frame(height: 200)
                     )
+                    .clipped()
                 
-                VStack {
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
-                        .foregroundColor(categoryColor.opacity(0.3))
-                    Text("Fact Image")
+                if isImageLoaded {
+                    // Placeholder for future image implementation
+                    Color.clear
+                        .frame(height: 200)
+                }
+            }
+            
+            // Fact Content
+            VStack(alignment: .leading, spacing: 12) {
+                Text(fact.content)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                
+                // Tags
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(fact.tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(categoryColor.opacity(0.1))
+                                .foregroundColor(categoryColor)
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
+                Divider()
+                    .padding(.horizontal)
+                
+                // Source
+                HStack {
+                    Text("Source: \(fact.source)")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    Spacer()
                 }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal)
-            .onAppear {
-                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
-                    showShimmer = false
-                }
-            }
-            
-            // Fact Content with Dynamic Type
-            Text(fact.content)
-                .font(.body)
-                .lineSpacing(8)
-                .multilineTextAlignment(.leading)
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.systemBackground))
-                        .shadow(color: categoryColor.opacity(0.1), radius: 5)
-                )
                 .padding(.horizontal)
-            
-            // Related Articles with Horizontal Scroll
-            if !fact.relatedArticles.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Related Articles")
-                        .font(.headline)
-                        .foregroundColor(categoryColor)
-                        .padding(.horizontal)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(fact.relatedArticles) { article in
-                                RelatedArticleCard(article: article, color: categoryColor)
-                                    .transition(.scale.combined(with: .opacity))
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                }
+                .padding(.bottom)
             }
-            
-            // Footer with Source and Learn More
-            HStack {
-                Text("Source: \(fact.source)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                if let url = fact.url {
-                    Link("Learn More", destination: URL(string: url)!)
-                        .font(.caption.bold())
-                        .foregroundColor(categoryColor)
-                }
-            }
-            .padding()
         }
         .background(Color(.systemBackground))
         .cornerRadius(16)
         .shadow(radius: 5)
         .padding(.horizontal)
-        .offset(cardOffset)
-        .rotationEffect(.degrees(cardRotation))
-        .gesture(
-            DragGesture()
-                .onChanged { gesture in
-                    cardOffset = gesture.translation
-                    cardRotation = Double(gesture.translation.width / 20)
-                }
-                .onEnded { _ in
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                        cardOffset = .zero
-                        cardRotation = 0
-                    }
-                }
-        )
+        .onAppear {
+            // Animate shimmer effect
+            withAnimation(Animation.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                showShimmer.toggle()
+            }
+        }
     }
 }

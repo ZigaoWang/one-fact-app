@@ -9,10 +9,8 @@ class FactViewModel: ObservableObject {
     @Published var showError = false
     @Published var hasSeenFactToday = false
     @Published var todaysCategory: Category?
-    @Published var seenCategories: Set<String> = []
     
     private let factService: FactService
-    private let defaults = UserDefaults.standard
     
     let categories: [Category] = [
         Category(name: "Science", icon: "🔬", color: .blue),
@@ -25,28 +23,14 @@ class FactViewModel: ObservableObject {
     
     init() {
         self.factService = FactService()
-        loadSeenCategories()
         checkDailyFactStatus()
     }
     
-    private func loadSeenCategories() {
-        if let savedDate = defaults.object(forKey: "LastSeenFactsDate") as? Date,
-           Calendar.current.isDate(savedDate, inSameDayAs: Date()) {
-            seenCategories = Set(defaults.stringArray(forKey: "TodaysSeenCategories") ?? [])
-        } else {
-            // Reset seen categories for new day
-            seenCategories.removeAll()
-            defaults.set(Date(), forKey: "LastSeenFactsDate")
-            defaults.set([], forKey: "TodaysSeenCategories")
-        }
-    }
-    
     func checkDailyFactStatus() {
-        loadSeenCategories()
-        
-        if let categoryName = defaults.string(forKey: "LastSeenCategoryName"),
-           seenCategories.contains(categoryName) {
-            todaysCategory = categories.first { $0.name == categoryName }
+        if let lastCategory = CategoryTracker.getLastOpenedCategory(),
+           let lastDate = CategoryTracker.getLastOpenedDate(),
+           Calendar.current.isDate(lastDate, inSameDayAs: Date()) {
+            todaysCategory = categories.first { $0.name == lastCategory }
             hasSeenFactToday = true
         } else {
             todaysCategory = nil
@@ -55,18 +39,24 @@ class FactViewModel: ObservableObject {
     }
     
     func fetchFactByCategory(_ category: String) async {
+        guard CategoryTracker.canOpenCategory(category) else {
+            errorMessage = "You can only view one category per day. Today you've already viewed \(CategoryTracker.getLastOpenedCategory() ?? "another category")."
+            showError = true
+            return
+        }
+        
         isLoading = true
         errorMessage = nil
         showError = false
         
         do {
-            let fact = try await factService.fetchFactByCategory(category)
-            currentFact = fact
+            let facts = try await factService.searchFacts(query: "", category: category)
+            guard let fact = facts.first else {
+                throw APIError.noData
+            }
             
-            // Update seen categories
-            seenCategories.insert(category)
-            defaults.set(Array(seenCategories), forKey: "TodaysSeenCategories")
-            defaults.set(category, forKey: "LastSeenCategoryName")
+            currentFact = fact
+            CategoryTracker.trackCategoryOpened(category)
             
             hasSeenFactToday = true
             todaysCategory = categories.first { $0.name == category }
@@ -84,40 +74,15 @@ class FactViewModel: ObservableObject {
     }
     
     func canViewCategory(_ category: Category) -> Bool {
-        // Can view if we haven't seen any facts today
-        if seenCategories.isEmpty {
-            return true
-        }
-        
-        // Can only view categories we've already seen today
-        return seenCategories.contains(category.name)
+        return CategoryTracker.canOpenCategory(category.name)
     }
     
-    // Call this when app becomes active
-    func refreshDailyStatus() {
-        loadSeenCategories()
+    #if DEBUG
+    func resetForTesting() {
+        CategoryTracker.resetForTesting()
         checkDailyFactStatus()
-        
-        // Clear cache if it's a new day
-        if seenCategories.isEmpty {
-            factService.clearCache()
-        }
     }
-}
-
-struct Category: Identifiable, Hashable {
-    let id = UUID()
-    let name: String
-    let icon: String
-    let color: Color
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-    
-    static func == (lhs: Category, rhs: Category) -> Bool {
-        lhs.id == rhs.id
-    }
+    #endif
 }
 
 extension Color {
