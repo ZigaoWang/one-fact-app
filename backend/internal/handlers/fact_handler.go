@@ -1,12 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
-	"strconv"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-chi/chi/v5"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/services"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type FactHandler struct {
@@ -19,89 +20,109 @@ func NewFactHandler(factService *services.FactService) *FactHandler {
 	}
 }
 
-func (h *FactHandler) GetDailyFact(c *gin.Context) {
-	fact, err := h.factService.GetDailyFact(c.Request.Context())
+func (h *FactHandler) RegisterRoutes(r chi.Router) {
+	r.Get("/daily", h.GetDailyFact)
+	r.Get("/search", h.SearchFacts)
+	r.Post("/", h.AddFact)
+	r.Put("/{id}", h.UpdateFact)
+	r.Delete("/{id}", h.DeleteFact)
+}
+
+func (h *FactHandler) GetDailyFact(w http.ResponseWriter, r *http.Request) {
+	category := r.URL.Query().Get("category")
+	if category == "" {
+		category = "Technology" // Default category
+	}
+
+	// Secret test mode parameter
+	isTest := r.URL.Query().Get("test_mode") == "true"
+
+	fact, err := h.factService.GetDailyFact(r.Context(), category, isTest)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Use gin's JSON method with proper indentation
-	c.IndentedJSON(http.StatusOK, fact)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(fact)
 }
 
-func (h *FactHandler) GetRandomFact(c *gin.Context) {
-	fact, err := h.factService.GetRandomFact(c.Request.Context())
+func (h *FactHandler) SearchFacts(w http.ResponseWriter, r *http.Request) {
+	var query models.FactQuery
+	query.Category = r.URL.Query().Get("category")
+	query.SearchTerm = r.URL.Query().Get("q")
+	query.Difficulty = r.URL.Query().Get("difficulty")
+	query.Language = r.URL.Query().Get("language")
+
+	// Parse other query parameters as needed
+
+	facts, err := h.factService.SearchFacts(r.Context(), query)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	c.IndentedJSON(http.StatusOK, fact)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(facts)
 }
 
-func (h *FactHandler) GetFactsByCategory(c *gin.Context) {
-	category := c.Param("category")
-	facts, err := h.factService.GetFactsByCategory(c.Request.Context(), category)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.IndentedJSON(http.StatusOK, facts)
-}
-
-func (h *FactHandler) GetDailyFactByCategory(c *gin.Context) {
-	category := c.Param("category")
-	fact, err := h.factService.GetDailyFactByCategory(c.Request.Context(), category)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.IndentedJSON(http.StatusOK, fact)
-}
-
-func (h *FactHandler) CreateFact(c *gin.Context) {
+func (h *FactHandler) AddFact(w http.ResponseWriter, r *http.Request) {
 	var fact models.Fact
-	if err := c.ShouldBindJSON(&fact); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&fact); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if err := h.factService.CreateFact(c.Request.Context(), &fact); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.factService.AddFact(r.Context(), &fact); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	c.IndentedJSON(http.StatusCreated, fact)
+	w.WriteHeader(http.StatusCreated)
 }
 
-func (h *FactHandler) UpdateFact(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+func (h *FactHandler) UpdateFact(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	objectID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fact ID"})
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
 
 	var fact models.Fact
-	if err := c.ShouldBindJSON(&fact); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := json.NewDecoder(r.Body).Decode(&fact); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	fact.ID = id
-	if err := h.factService.UpdateFact(c.Request.Context(), idStr, &fact); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	fact.ID = objectID
+	if err := h.factService.UpdateFact(r.Context(), &fact); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, fact)
+	w.WriteHeader(http.StatusOK)
 }
 
-func (h *FactHandler) DeleteFact(c *gin.Context) {
-	idStr := c.Param("id")
-	if err := h.factService.DeleteFact(c.Request.Context(), idStr); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+func (h *FactHandler) DeleteFact(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
-	c.Status(http.StatusNoContent)
+
+	if err := h.factService.DeleteFact(r.Context(), objectID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func respondJSON(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

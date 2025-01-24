@@ -2,230 +2,185 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
 	"github.com/ZigaoWang/one-fact-app/backend/internal/database"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type FactService struct {
-	db *database.Database
+	db    *database.Database
+	cache *database.Cache
 }
 
-func NewFactService(db *database.Database) *FactService {
-	return &FactService{db: db}
+func NewFactService(db *database.Database, cache *database.Cache) *FactService {
+	return &FactService{
+		db:    db,
+		cache: cache,
+	}
 }
 
-func (s *FactService) CreateFact(ctx context.Context, fact *models.Fact) error {
-	tx, err := s.db.DB().BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// Insert fact
-	var factID int
-	err = tx.QueryRowContext(ctx, `
-		INSERT INTO facts (content, category, source, display_date, active)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`, fact.Content, fact.Category, fact.Source, fact.DisplayDate, fact.Active).Scan(&factID)
-	if err != nil {
-		return err
-	}
-
-	// Insert related articles
-	for _, article := range fact.RelatedArticles {
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO related_articles (fact_id, title, url, source, snippet)
-			VALUES ($1, $2, $3, $4, $5)
-		`, factID, article.Title, article.URL, article.Source, article.Snippet)
-		if err != nil {
-			return err
+func (s *FactService) GetDailyFact(ctx context.Context, category string, isTest bool) (*models.Fact, error) {
+	// Try to get from cache first (only if not in test mode)
+	if !isTest {
+		if fact, err := s.cache.GetDailyFact(ctx); err == nil && fact != nil {
+			if fact.Category == category {
+				return fact, nil
+			}
 		}
 	}
 
-	return tx.Commit()
-}
-
-func (s *FactService) GetFactsByCategory(ctx context.Context, category string) ([]models.Fact, error) {
-	rows, err := s.db.DB().QueryContext(ctx, `
-		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
-			   ra.id, ra.title, ra.url, ra.source, ra.snippet
-		FROM facts f
-		LEFT JOIN related_articles ra ON f.id = ra.fact_id
-		WHERE f.category = $1 AND f.active = true
-		ORDER BY f.display_date DESC
-	`, category)
-	if err != nil {
-		return nil, err
+	// Get a random fact that hasn't been served recently for the specific category
+	collection := s.db.GetCollection("facts")
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{
+			"verified": true,
+			"category": category,
+			"$or": []bson.M{
+				{"metadata.last_served": bson.M{"$exists": false}},
+				{"metadata.last_served": bson.M{
+					"$lt": time.Now().Add(-24 * time.Hour),
+				}},
+			},
+		}}},
 	}
-	defer rows.Close()
 
-	return s.scanFacts(rows)
-}
-
-func (s *FactService) GetDailyFact(ctx context.Context) (*models.Fact, error) {
-	row := s.db.DB().QueryRowContext(ctx, `
-		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
-			   ra.id, ra.title, ra.url, ra.source, ra.snippet
-		FROM facts f
-		LEFT JOIN related_articles ra ON f.id = ra.fact_id
-		WHERE f.active = true AND f.display_date <= $1
-		ORDER BY f.display_date DESC
-		LIMIT 1
-	`, time.Now())
-
-	facts, err := s.scanFact(row)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, errors.New("no fact found")
+	// If in test mode, skip the last_served check
+	if isTest {
+		pipeline = mongo.Pipeline{
+			{{Key: "$match", Value: bson.M{
+				"verified": true,
+				"category": category,
+			}}},
 		}
-		return nil, err
 	}
 
-	return facts, nil
-}
+	// Add random sampling
+	pipeline = append(pipeline, bson.D{{Key: "$sample", Value: bson.M{"size": 1}}})
 
-func (s *FactService) GetDailyFactByCategory(ctx context.Context, category string) (*models.Fact, error) {
-	row := s.db.DB().QueryRowContext(ctx, `
-		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
-			   ra.id, ra.title, ra.url, ra.source, ra.snippet
-		FROM facts f
-		LEFT JOIN related_articles ra ON f.id = ra.fact_id
-		WHERE f.category = $1 AND f.active = true AND f.display_date <= $2
-		ORDER BY f.display_date DESC
-		LIMIT 1
-	`, category, time.Now())
-
-	facts, err := s.scanFact(row)
+	cursor, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, errors.New("no fact found")
-		}
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var facts []models.Fact
+	if err := cursor.All(ctx, &facts); err != nil {
 		return nil, err
 	}
 
-	return facts, nil
-}
-
-func (s *FactService) GetRandomFact(ctx context.Context) (*models.Fact, error) {
-	row := s.db.DB().QueryRowContext(ctx, `
-		SELECT f.id, f.content, f.category, f.source, f.display_date, f.active,
-			   ra.id, ra.title, ra.url, ra.source, ra.snippet
-		FROM facts f
-		LEFT JOIN related_articles ra ON f.id = ra.fact_id
-		WHERE f.active = true
-		ORDER BY RANDOM()
-		LIMIT 1
-	`)
-
-	facts, err := s.scanFact(row)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, errors.New("no fact found")
-		}
-		return nil, err
+	if len(facts) == 0 {
+		return nil, errors.New("no facts available for category: " + category)
 	}
 
-	return facts, nil
-}
+	fact := &facts[0]
 
-func (s *FactService) scanFacts(rows *sql.Rows) ([]models.Fact, error) {
-	facts := make(map[int]*models.Fact)
+	// Update last served time and increment serve count (only if not in test mode)
+	if !isTest {
+		update := bson.M{
+			"$set": bson.M{
+				"metadata.last_served": time.Now(),
+			},
+			"$inc": bson.M{
+				"metadata.serve_count": 1,
+			},
+		}
 
-	for rows.Next() {
-		var fact models.Fact
-		var article models.RelatedArticle
-		var articleID sql.NullInt64
-		var articleTitle, articleURL, articleSource, articleSnippet sql.NullString
-
-		err := rows.Scan(
-			&fact.ID, &fact.Content, &fact.Category, &fact.Source, &fact.DisplayDate, &fact.Active,
-			&articleID, &articleTitle, &articleURL, &articleSource, &articleSnippet,
-		)
-		if err != nil {
+		if _, err := collection.UpdateByID(ctx, fact.ID, update); err != nil {
 			return nil, err
 		}
 
-		if existingFact, ok := facts[fact.ID]; ok {
-			if articleID.Valid {
-				article = models.RelatedArticle{
-					ID:      int(articleID.Int64),
-					Title:   articleTitle.String,
-					URL:     articleURL.String,
-					Source:  articleSource.String,
-					Snippet: articleSnippet.String,
-				}
-				existingFact.RelatedArticles = append(existingFact.RelatedArticles, article)
-			}
-		} else {
-			fact.RelatedArticles = make([]models.RelatedArticle, 0)
-			if articleID.Valid {
-				article = models.RelatedArticle{
-					ID:      int(articleID.Int64),
-					Title:   articleTitle.String,
-					URL:     articleURL.String,
-					Source:  articleSource.String,
-					Snippet: articleSnippet.String,
-				}
-				fact.RelatedArticles = append(fact.RelatedArticles, article)
-			}
-			facts[fact.ID] = &fact
+		// Cache the fact
+		if err := s.cache.SetDailyFact(ctx, fact); err != nil {
+			// Log error but don't fail the request
+			_ = err
 		}
 	}
 
-	result := make([]models.Fact, 0, len(facts))
-	for _, fact := range facts {
-		result = append(result, *fact)
-	}
-	return result, nil
+	return fact, nil
 }
 
-func (s *FactService) scanFact(row *sql.Row) (*models.Fact, error) {
-	var fact models.Fact
-	var article models.RelatedArticle
-	var articleID sql.NullInt64
-	var articleTitle, articleURL, articleSource, articleSnippet sql.NullString
+func (s *FactService) SearchFacts(ctx context.Context, query models.FactQuery) ([]models.Fact, error) {
+	collection := s.db.GetCollection("facts")
+	filter := bson.M{}
 
-	err := row.Scan(
-		&fact.ID, &fact.Content, &fact.Category, &fact.Source, &fact.DisplayDate, &fact.Active,
-		&articleID, &articleTitle, &articleURL, &articleSource, &articleSnippet,
-	)
+	if query.Category != "" {
+		filter["category"] = query.Category
+	}
+
+	if len(query.Tags) > 0 {
+		filter["tags"] = bson.M{"$all": query.Tags}
+	}
+
+	if query.SearchTerm != "" {
+		filter["$text"] = bson.M{"$search": query.SearchTerm}
+	}
+
+	if query.Verified != nil {
+		filter["verified"] = *query.Verified
+	}
+
+	if !query.StartDate.IsZero() {
+		filter["created_at"] = bson.M{"$gte": query.StartDate}
+	}
+
+	if !query.EndDate.IsZero() {
+		if _, ok := filter["created_at"]; ok {
+			filter["created_at"].(bson.M)["$lte"] = query.EndDate
+		} else {
+			filter["created_at"] = bson.M{"$lte": query.EndDate}
+		}
+	}
+
+	if query.Difficulty != "" {
+		filter["metadata.difficulty"] = query.Difficulty
+	}
+
+	if query.Language != "" {
+		filter["metadata.language"] = query.Language
+	}
+
+	findOptions := options.Find()
+	if query.Limit > 0 {
+		findOptions.SetLimit(int64(query.Limit))
+	}
+	if query.Offset > 0 {
+		findOptions.SetSkip(int64(query.Offset))
+	}
+
+	cursor, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
 		return nil, err
 	}
+	defer cursor.Close(ctx)
 
-	fact.RelatedArticles = make([]models.RelatedArticle, 0)
-	if articleID.Valid {
-		article = models.RelatedArticle{
-			ID:      int(articleID.Int64),
-			Title:   articleTitle.String,
-			URL:     articleURL.String,
-			Source:  articleSource.String,
-			Snippet: articleSnippet.String,
-		}
-		fact.RelatedArticles = append(fact.RelatedArticles, article)
+	var facts []models.Fact
+	if err := cursor.All(ctx, &facts); err != nil {
+		return nil, err
 	}
 
-	return &fact, nil
+	return facts, nil
 }
 
-func (s *FactService) UpdateFact(ctx context.Context, id string, fact *models.Fact) error {
-	_, err := s.db.DB().ExecContext(ctx, `
-		UPDATE facts
-		SET content = $1, category = $2, source = $3, display_date = $4, active = $5
-		WHERE id = $6
-	`, fact.Content, fact.Category, fact.Source, fact.DisplayDate, fact.Active, id)
+func (s *FactService) AddFact(ctx context.Context, fact *models.Fact) error {
+	collection := s.db.GetCollection("facts")
+	_, err := collection.InsertOne(ctx, fact)
 	return err
 }
 
-func (s *FactService) DeleteFact(ctx context.Context, id string) error {
-	_, err := s.db.DB().ExecContext(ctx, `
-		DELETE FROM facts
-		WHERE id = $1
-	`, id)
+func (s *FactService) UpdateFact(ctx context.Context, fact *models.Fact) error {
+	collection := s.db.GetCollection("facts")
+	_, err := collection.ReplaceOne(ctx, bson.M{"_id": fact.ID}, fact)
+	return err
+}
+
+func (s *FactService) DeleteFact(ctx context.Context, id primitive.ObjectID) error {
+	collection := s.db.GetCollection("facts")
+	_, err := collection.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }

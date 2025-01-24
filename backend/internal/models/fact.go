@@ -1,60 +1,43 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// Fact represents a single fact in the database
 type Fact struct {
-	ID             int             `json:"id"`
-	Content        string          `json:"content"`
-	Category       string          `json:"category"`
-	Source         string          `json:"source"`
-	DisplayDate    time.Time       `json:"displayDate"`
-	Active         bool            `json:"active"`
-	RelatedArticles []RelatedArticle `json:"relatedArticles"`
+	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Content     string            `bson:"content" json:"content"`
+	Category    string            `bson:"category" json:"category"`
+	Source      string            `bson:"source" json:"source"`
+	Tags        []string          `bson:"tags" json:"tags"`
+	Verified    bool              `bson:"verified" json:"verified"`
+	CreatedAt   time.Time         `bson:"created_at" json:"created_at"`
+	UpdatedAt   time.Time         `bson:"updated_at" json:"updated_at"`
+	RelatedURLs []string          `bson:"related_urls" json:"related_urls"`
+	Metadata    FactMetadata      `bson:"metadata" json:"metadata"`
 }
 
-// MarshalJSON implements custom JSON marshaling for Fact
-func (f Fact) MarshalJSON() ([]byte, error) {
-	type Alias Fact
-	return json.Marshal(&struct {
-		Alias
-		DisplayDate string `json:"displayDate"`
-	}{
-		Alias:       Alias(f),
-		DisplayDate: f.DisplayDate.Format(time.RFC3339),
-	})
+type FactMetadata struct {
+	Language    string   `bson:"language" json:"language"`
+	Difficulty  string   `bson:"difficulty" json:"difficulty"`
+	References  []string `bson:"references" json:"references"`
+	Keywords    []string `bson:"keywords" json:"keywords"`
+	Popularity  int      `bson:"popularity" json:"popularity"`
+	LastServed  time.Time `bson:"last_served" json:"last_served"`
+	ServeCount  int      `bson:"serve_count" json:"serve_count"`
 }
 
-// UnmarshalJSON implements custom JSON unmarshaling for Fact
-func (f *Fact) UnmarshalJSON(data []byte) error {
-	type Alias Fact
-	aux := &struct {
-		*Alias
-		DisplayDate string `json:"displayDate"`
-	}{
-		Alias: (*Alias)(f),
-	}
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	if aux.DisplayDate != "" {
-		date, err := time.Parse(time.RFC3339, aux.DisplayDate)
-		if err != nil {
-			return err
-		}
-		f.DisplayDate = date
-	}
-	return nil
-}
-
-// RelatedArticle represents an article related to a fact
-type RelatedArticle struct {
-	ID      int    `json:"id"`
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Source  string `json:"source"`
-	Snippet string `json:"snippet"`
+type FactQuery struct {
+	Category    string    `json:"category"`
+	Tags        []string  `json:"tags"`
+	StartDate   time.Time `json:"start_date"`
+	EndDate     time.Time `json:"end_date"`
+	SearchTerm  string    `json:"search_term"`
+	Difficulty  string    `json:"difficulty"`
+	Language    string    `json:"language"`
+	Verified    *bool     `json:"verified"`
+	Limit       int       `json:"limit"`
+	Offset      int       `json:"offset"`
 }

@@ -1,36 +1,92 @@
 package config
 
 import (
-	"fmt"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
-// Config holds all configuration for the application
 type Config struct {
+	Server   ServerConfig
+	MongoDB  MongoDBConfig
+	Redis    RedisConfig
+	API      APIConfig
+	Services ServiceConfig
+}
+
+type ServerConfig struct {
+	Port string
+	Env  string
+}
+
+type MongoDBConfig struct {
+	URI      string
+	Database string
+}
+
+type RedisConfig struct {
+	Host     string
 	Port     string
-	MongoURI string
-	DBName   string
+	Password string
+	DB       int
 }
 
-// LoadConfig loads configuration from environment variables
-func LoadConfig() (*Config, error) {
+type APIConfig struct {
+	Secret           string
+	AllowedOrigins   string
+}
+
+type ServiceConfig struct {
+	FactFetchInterval time.Duration
+	CacheTTL         time.Duration
+}
+
+func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
-		fmt.Println("Warning: .env file not found")
+		// Allow missing .env file in production
+		if os.Getenv("ENV") != "production" {
+			return nil, err
+		}
 	}
 
-	config := &Config{
-		Port:     getEnvOrDefault("PORT", "8080"),
-		MongoURI: getEnvOrDefault("MONGO_URI", "mongodb://localhost:27017"),
-		DBName:   getEnvOrDefault("DB_NAME", "one_fact"),
+	factFetchInterval, err := time.ParseDuration(getEnv("FACT_FETCH_INTERVAL", "24h"))
+	if err != nil {
+		return nil, err
 	}
 
-	return config, nil
+	cacheTTL, err := time.ParseDuration(getEnv("CACHE_TTL", "24h"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &Config{
+		Server: ServerConfig{
+			Port: getEnv("PORT", "8080"),
+			Env:  getEnv("ENV", "development"),
+		},
+		MongoDB: MongoDBConfig{
+			URI:      getEnv("MONGODB_URI", "mongodb://localhost:27017"),
+			Database: getEnv("MONGODB_DATABASE", "one_fact"),
+		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       0,
+		},
+		API: APIConfig{
+			Secret:         getEnv("API_SECRET", "your_secret_key_here"),
+			AllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "*"),
+		},
+		Services: ServiceConfig{
+			FactFetchInterval: factFetchInterval,
+			CacheTTL:         cacheTTL,
+		},
+	}, nil
 }
 
-// getEnvOrDefault returns the value of an environment variable or a default value
-func getEnvOrDefault(key, defaultValue string) string {
+func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -9,78 +10,99 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/config"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/database"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/handlers"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/services"
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// Initialize database
-	db, err := database.NewDatabase()
+	// Load configuration
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	defer db.Close()
 
-	// Initialize services
-	factService := services.NewFactService(db)
+	// Initialize MongoDB connection
+	db, err := database.NewDatabase(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
+	}
 
-	// Initialize handlers
+	// Initialize Redis cache
+	cache, err := database.NewCache(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
+	// Create services
+	factService := services.NewFactService(db, cache)
+
+	// Create handlers
 	factHandler := handlers.NewFactHandler(factService)
 
-	// Initialize router
-	router := gin.Default()
+	// Create router
+	r := chi.NewRouter()
 
-	// Configure CORS
-	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"*"}
-	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
-	router.Use(cors.New(config))
+	// Middleware
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Timeout(60 * time.Second))
 
-	// Define routes
-	router.GET("/api/facts/daily", factHandler.GetDailyFact)
-	router.GET("/api/facts/random", factHandler.GetRandomFact)
-	router.GET("/api/facts/category/:category", factHandler.GetFactsByCategory)
-	router.GET("/api/facts/category/:category/daily", factHandler.GetDailyFactByCategory)
-	router.POST("/api/facts", factHandler.CreateFact)
-	router.PUT("/api/facts/:id", factHandler.UpdateFact)
-	router.DELETE("/api/facts/:id", factHandler.DeleteFact)
+	// CORS configuration
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{cfg.API.AllowedOrigins},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
 
-	// Get port from environment variable or use default
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	// Routes
+	r.Route("/api/v1/facts", func(r chi.Router) {
+		factHandler.RegisterRoutes(r)
+	})
 
-	// Create server with graceful shutdown
+	// Create server
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: router,
+		Addr:    fmt.Sprintf(":%s", cfg.Server.Port),
+		Handler: r,
 	}
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf("Server starting on port %s\n", port)
+		log.Printf("Starting server on port %s", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v\n", err)
+			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
+	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
 
-	// Give outstanding requests 5 seconds to complete
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Shutdown gracefully
+	log.Println("Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	log.Println("Server exiting")
+	if err := db.Close(ctx); err != nil {
+		log.Printf("Error closing MongoDB connection: %v", err)
+	}
+
+	if err := cache.Close(); err != nil {
+		log.Printf("Error closing Redis connection: %v", err)
+	}
+
+	log.Println("Server exited properly")
 }
