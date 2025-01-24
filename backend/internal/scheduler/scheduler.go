@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -48,7 +49,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	defer ticker.Stop()
 
 	// Initial collection
-	if err := s.collectFacts(ctx); err != nil {
+	if err := s.CollectFacts(ctx); err != nil {
 		log.Printf("Error in initial fact collection: %v", err)
 	}
 
@@ -57,14 +58,15 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := s.collectFacts(ctx); err != nil {
+			if err := s.CollectFacts(ctx); err != nil {
 				log.Printf("Error collecting facts: %v", err)
 			}
 		}
 	}
 }
 
-func (s *Scheduler) collectFacts(ctx context.Context) error {
+// CollectFacts collects facts from all sources
+func (s *Scheduler) CollectFacts(ctx context.Context) error {
 	var wg sync.WaitGroup
 	factsChan := make(chan *processors.ProcessedFact, 100)
 	errorsChan := make(chan error, len(s.sources))
@@ -102,24 +104,23 @@ func (s *Scheduler) collectFacts(ctx context.Context) error {
 		close(errorsChan)
 	}()
 
-	// Store processed facts
-	var storedCount int
+	// Store facts in MongoDB
+	var errs []error
 	for fact := range factsChan {
 		if _, err := s.collection.InsertOne(ctx, fact); err != nil {
-			log.Printf("Error storing fact: %v", err)
-			continue
+			errs = append(errs, fmt.Errorf("storing fact: %w", err))
 		}
-		storedCount++
 	}
 
-	// Check for errors
+	// Check for errors from sources
 	for err := range errorsChan {
-		if err != nil {
-			log.Printf("Error from source: %v", err)
-		}
+		errs = append(errs, err)
 	}
 
-	log.Printf("Successfully stored %d new facts", storedCount)
+	if len(errs) > 0 {
+		return fmt.Errorf("collecting facts: %v", errs)
+	}
+
 	return nil
 }
 

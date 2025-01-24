@@ -3,6 +3,7 @@ package collectors
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 )
@@ -12,12 +13,16 @@ type WikipediaSource struct {
 	BaseSource
 }
 
+type wikipediaCategory struct {
+	Title string `json:"title"`
+}
+
 type wikipediaResponse struct {
 	Query struct {
 		Pages map[string]struct {
-			Title    string   `json:"title"`
-			Extract  string   `json:"extract"`
-			Category []string `json:"categories"`
+			Title      string             `json:"title"`
+			Extract    string            `json:"extract"`
+			Categories []wikipediaCategory `json:"categories"`
 		} `json:"pages"`
 	} `json:"query"`
 }
@@ -36,52 +41,97 @@ func (w *WikipediaSource) Name() string {
 
 // GetFacts fetches random facts from Wikipedia
 func (w *WikipediaSource) GetFacts(ctx context.Context) ([]RawFact, error) {
-	var response wikipediaResponse
-	url := fmt.Sprintf("%s?action=query&format=json&prop=extracts|categories&exintro=1&explaintext=1&generator=random&grnnamespace=0&grnlimit=10",
-		w.baseURL)
-
-	if err := w.FetchJSON(ctx, url, &response); err != nil {
-		return nil, fmt.Errorf("fetching from Wikipedia: %w", err)
+	// Define categories we want to fetch from
+	categories := []string{
+		"Science",
+		"Technology",
+		"History",
+		"Geography",
+		"Arts",
+		"Culture",
+		"Sports",
+		"Entertainment",
+		"Politics",
+		"Business",
+		"Education",
+		"Health",
+		"Environment",
 	}
 
 	var facts []RawFact
-	for _, page := range response.Query.Pages {
-		// Skip if extract is too short or too long
-		if len(page.Extract) < 50 || len(page.Extract) > 500 {
-			continue
+	for _, cat := range categories {
+		// First, get pages from the category
+		var catResponse struct {
+			Query struct {
+				Categorymembers []struct {
+					Title string `json:"title"`
+				} `json:"categorymembers"`
+			} `json:"query"`
 		}
 
-		// Clean up the extract
-		content := strings.TrimSpace(page.Extract)
-		if !strings.HasSuffix(content, ".") {
-			content += "."
+		catURL := fmt.Sprintf("%s?action=query&format=json&list=categorymembers&cmtitle=Category:%s&cmlimit=50",
+			w.baseURL, cat)
+
+		if err := w.FetchJSON(ctx, catURL, &catResponse); err != nil {
+			continue // Skip this category if there's an error
 		}
 
-		// Extract categories
-		categories := make([]string, 0)
-		for _, cat := range page.Category {
-			// Remove "Category:" prefix and clean up
-			cat = strings.TrimPrefix(cat, "Category:")
-			cat = strings.Trim(cat, " ")
-			if cat != "" {
-				categories = append(categories, cat)
+		// Get random pages from this category
+		if len(catResponse.Query.Categorymembers) > 0 {
+			// Get 2-3 random pages from each category
+			numPages := 2 + rand.Intn(2) // 2 or 3 pages
+			for i := 0; i < numPages && i < len(catResponse.Query.Categorymembers); i++ {
+				page := catResponse.Query.Categorymembers[i]
+
+				// Get page content
+				var pageResponse wikipediaResponse
+				pageURL := fmt.Sprintf("%s?action=query&format=json&prop=extracts|categories&exintro=1&explaintext=1&titles=%s",
+					w.baseURL, strings.ReplaceAll(page.Title, " ", "_"))
+
+				if err := w.FetchJSON(ctx, pageURL, &pageResponse); err != nil {
+					continue
+				}
+
+				// Process each page
+				for _, pageContent := range pageResponse.Query.Pages {
+					// Skip if extract is too short or too long
+					if len(pageContent.Extract) < 50 || len(pageContent.Extract) > 500 {
+						continue
+					}
+
+					// Clean up the extract
+					content := strings.TrimSpace(pageContent.Extract)
+					if !strings.HasSuffix(content, ".") {
+						content += "."
+					}
+
+					// Extract categories
+					pageCats := make([]string, 0)
+					for _, pageCat := range pageContent.Categories {
+						catName := strings.TrimPrefix(pageCat.Title, "Category:")
+						catName = strings.Trim(catName, " ")
+						if catName != "" {
+							pageCats = append(pageCats, catName)
+						}
+					}
+
+					fact := RawFact{
+						Content:  content,
+						Source:   "Wikipedia",
+						Category: cat, // Use the main category we're currently processing
+						Tags:     pageCats,
+						URLs: []string{
+							fmt.Sprintf("https://en.wikipedia.org/wiki/%s", strings.ReplaceAll(pageContent.Title, " ", "_")),
+						},
+						Metadata: map[string]string{
+							"title": pageContent.Title,
+						},
+						CollectedAt: time.Now(),
+					}
+					facts = append(facts, fact)
+				}
 			}
 		}
-
-		fact := RawFact{
-			Content:  content,
-			Source:   "Wikipedia",
-			Category: "General Knowledge",
-			Tags:     categories,
-			URLs: []string{
-				fmt.Sprintf("https://en.wikipedia.org/wiki/%s", strings.ReplaceAll(page.Title, " ", "_")),
-			},
-			Metadata: map[string]string{
-				"title": page.Title,
-			},
-			CollectedAt: time.Now(),
-		}
-		facts = append(facts, fact)
 	}
 
 	return facts, nil

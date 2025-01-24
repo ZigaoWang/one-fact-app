@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"log"
+	"math/rand"
 	"time"
 
 	"github.com/ZigaoWang/one-fact-app/backend/internal/database"
@@ -105,35 +107,52 @@ func (s *FactService) GetDailyFact(ctx context.Context, category string, isTest 
 	return fact, nil
 }
 
+func (s *FactService) GetRandomFact(ctx context.Context) (*models.Fact, error) {
+	collection := s.db.GetCollection("facts")
+	
+	// Get total count of facts
+	count, err := collection.CountDocuments(ctx, bson.M{"verified": true})
+	if err != nil {
+		return nil, err
+	}
+	
+	if count == 0 {
+		return nil, errors.New("no facts available")
+	}
+	
+	// Get a random skip value
+	skip := rand.Int63n(count)
+	
+	// Find one random document
+	var fact models.Fact
+	err = collection.FindOne(ctx, bson.M{"verified": true}, options.FindOne().SetSkip(skip)).Decode(&fact)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &fact, nil
+}
+
 func (s *FactService) SearchFacts(ctx context.Context, query models.FactQuery) ([]models.Fact, error) {
 	collection := s.db.GetCollection("facts")
-	filter := bson.M{}
+	filter := bson.M{"verified": true}
+
+	log.Printf("Received search query: %+v\n", query)
 
 	if query.Category != "" {
-		filter["category"] = query.Category
+		filter["category"] = bson.M{"$regex": primitive.Regex{Pattern: query.Category, Options: "i"}}
 	}
 
-	if len(query.Tags) > 0 {
-		filter["tags"] = bson.M{"$all": query.Tags}
+	if len(query.Tags) > 0 && query.Tags[0] != "" {
+		filter["tags"] = bson.M{"$in": query.Tags}
 	}
 
 	if query.SearchTerm != "" {
-		filter["$text"] = bson.M{"$search": query.SearchTerm}
-	}
-
-	if query.Verified != nil {
-		filter["verified"] = *query.Verified
-	}
-
-	if !query.StartDate.IsZero() {
-		filter["created_at"] = bson.M{"$gte": query.StartDate}
-	}
-
-	if !query.EndDate.IsZero() {
-		if _, ok := filter["created_at"]; ok {
-			filter["created_at"].(bson.M)["$lte"] = query.EndDate
-		} else {
-			filter["created_at"] = bson.M{"$lte": query.EndDate}
+		filter["$or"] = []bson.M{
+			{"content": bson.M{"$regex": query.SearchTerm, "$options": "i"}},
+			{"category": bson.M{"$regex": query.SearchTerm, "$options": "i"}},
+			{"tags": bson.M{"$regex": query.SearchTerm, "$options": "i"}},
+			{"metadata.keywords": bson.M{"$regex": query.SearchTerm, "$options": "i"}},
 		}
 	}
 
@@ -153,17 +172,21 @@ func (s *FactService) SearchFacts(ctx context.Context, query models.FactQuery) (
 		findOptions.SetSkip(int64(query.Offset))
 	}
 
+	log.Printf("Final filter: %+v\n", filter)
 	cursor, err := collection.Find(ctx, filter, findOptions)
 	if err != nil {
+		log.Printf("Error finding facts: %v\n", err)
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
 	var facts []models.Fact
 	if err := cursor.All(ctx, &facts); err != nil {
+		log.Printf("Error decoding facts: %v\n", err)
 		return nil, err
 	}
 
+	log.Printf("Found %d facts\n", len(facts))
 	return facts, nil
 }
 

@@ -11,17 +11,17 @@ import (
 // ProcessedFact represents a fact that has been validated and enriched
 type ProcessedFact struct {
 	ID          string            `json:"id" bson:"_id,omitempty"`
-	Content     string            `json:"content"`
-	Source      string            `json:"source"`
-	Category    string            `json:"category"`
-	Tags        []string          `json:"tags"`
-	URLs        []string          `json:"urls"`
-	Metadata    map[string]string `json:"metadata"`
-	Verified    bool              `json:"verified"`
-	Score       float64           `json:"score"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
-	PublishDate time.Time         `json:"publish_date"`
+	Content     string            `json:"content" bson:"content"`
+	Source      string            `json:"source" bson:"source"`
+	Category    string            `json:"category" bson:"category"`
+	Tags        []string          `json:"tags" bson:"tags"`
+	URLs        []string          `json:"related_urls" bson:"related_urls"`
+	Metadata    map[string]string `json:"metadata" bson:"metadata"`
+	Verified    bool             `json:"verified" bson:"verified"`
+	Score       float64          `json:"score" bson:"score"`
+	CreatedAt   time.Time        `json:"created_at" bson:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at" bson:"updated_at"`
+	PublishDate time.Time        `json:"publish_date" bson:"publish_date"`
 }
 
 // Processor handles fact validation and enrichment
@@ -66,7 +66,7 @@ func (p *Processor) Process(ctx context.Context, raw collectors.RawFact) (*Proce
 		return nil, nil
 	}
 
-	// Create processed fact
+	// Create processed fact with normalized fields
 	now := time.Now()
 	fact := &ProcessedFact{
 		Content:     raw.Content,
@@ -101,66 +101,129 @@ func (p *Processor) validateContent(content string) bool {
 	}
 
 	// Check for required words
-	hasRequired := false
+	hasRequiredWord := false
 	for _, word := range p.requiredWords {
 		if strings.Contains(content, word) {
-			hasRequired = true
+			hasRequiredWord = true
 			break
 		}
 	}
 
-	return hasRequired
+	return hasRequiredWord
 }
 
 func (p *Processor) calculateScore(raw collectors.RawFact) float64 {
-	score := 1.0
+	var score float64 = 1.0
 
-	// Reduce score for very short or very long content
+	// Content length score (0.8 - 1.2)
 	contentLength := len(raw.Content)
-	if contentLength < 100 {
-		score *= 0.8
-	} else if contentLength > 400 {
-		score *= 0.9
+	if contentLength >= 200 && contentLength <= 300 {
+		score += 0.2
+	} else if contentLength < 100 || contentLength > 400 {
+		score -= 0.2
 	}
 
-	// Boost score for facts with metadata
-	if len(raw.Metadata) > 0 {
-		score *= 1.1
+	// Category score (0 - 0.2)
+	if raw.Category != "" {
+		score += 0.1
 	}
 
-	// Boost score for facts with URLs
-	if len(raw.URLs) > 0 {
-		score *= 1.1
-	}
-
-	// Boost score for facts with tags
+	// Tags score (0 - 0.2)
 	if len(raw.Tags) > 0 {
-		score *= 1.1
+		score += 0.1
+		if len(raw.Tags) >= 3 {
+			score += 0.1
+		}
+	}
+
+	// URLs score (0 - 0.2)
+	if len(raw.URLs) > 0 {
+		score += 0.2
+	}
+
+	// Metadata score (0 - 0.2)
+	if len(raw.Metadata) > 0 {
+		score += 0.1
+		if len(raw.Metadata) >= 3 {
+			score += 0.1
+		}
 	}
 
 	return score
 }
 
 func (p *Processor) normalizeCategory(category string) string {
-	category = strings.TrimSpace(category)
-	if category == "" {
-		return "General Knowledge"
+	// Map of Wikipedia categories to our standard categories
+	categoryMap := map[string]string{
+		"All Article Disambiguation Pages": "General",
+		"All disambiguation pages": "General",
+		"Disambiguation pages": "General",
+		"Living people": "People",
+		"Science": "Science",
+		"Technology": "Technology",
+		"History": "History",
+		"Geography": "Geography",
+		"Arts": "Arts",
+		"Culture": "Culture",
+		"Sports": "Sports",
+		"Entertainment": "Entertainment",
+		"Politics": "Politics",
+		"Business": "Business",
+		"Education": "Education",
+		"Health": "Health",
+		"Environment": "Environment",
+		"Space": "Science",
+		"Physics": "Science",
+		"Chemistry": "Science",
+		"Biology": "Science",
+		"Mathematics": "Science",
+		"Computer Science": "Technology",
+		"Engineering": "Technology",
+		"Internet": "Technology",
+		"Software": "Technology",
+		"Hardware": "Technology",
+		"Artificial Intelligence": "Technology",
+		"Robotics": "Technology",
 	}
-	return strings.Title(strings.ToLower(category))
-}
 
-func (p *Processor) normalizeTags(tags []string) []string {
-	normalized := make([]string, 0, len(tags))
-	seen := make(map[string]bool)
+	// Clean up category name
+	category = strings.TrimSpace(category)
+	category = strings.TrimPrefix(category, "Category:")
 
-	for _, tag := range tags {
-		tag = strings.TrimSpace(tag)
-		tag = strings.ToLower(tag)
-		if tag != "" && !seen[tag] {
-			normalized = append(normalized, tag)
-			seen[tag] = true
+	// Check if we have a direct mapping
+	if mapped, ok := categoryMap[category]; ok {
+		return mapped
+	}
+
+	// Check if category contains any of our standard categories
+	for _, standardCat := range []string{"Science", "Technology", "History", "Geography", "Arts", "Culture", "Sports", "Entertainment", "Politics", "Business", "Education", "Health", "Environment"} {
+		if strings.Contains(category, standardCat) {
+			return standardCat
 		}
 	}
 
-	return normalized
+	// Default to General if no match found
+	return "General"
+}
+
+func (p *Processor) normalizeTags(tags []string) []string {
+	normalizedTags := make([]string, 0, len(tags))
+	seenTags := make(map[string]bool)
+
+	for _, tag := range tags {
+		// Clean up tag
+		tag = strings.TrimSpace(tag)
+		tag = strings.TrimPrefix(tag, "Category:")
+		tag = strings.ToLower(tag)
+
+		// Skip empty or already seen tags
+		if tag == "" || seenTags[tag] {
+			continue
+		}
+
+		normalizedTags = append(normalizedTags, tag)
+		seenTags[tag] = true
+	}
+
+	return normalizedTags
 }

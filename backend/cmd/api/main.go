@@ -2,24 +2,27 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/config"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/database"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/handlers"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/scheduler"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/services"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Error loading .env file: %v", err)
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -35,7 +38,7 @@ func main() {
 	// Initialize Redis cache
 	cache, err := database.NewCache(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		log.Printf("Failed to connect to Redis: %v", err)
 	}
 
 	// Create services
@@ -44,65 +47,53 @@ func main() {
 	// Create handlers
 	factHandler := handlers.NewFactHandler(factService)
 
+	// Initialize fact scheduler
+	scheduler := scheduler.NewScheduler(db.GetCollection("facts"))
+
+	// Start scheduler in a goroutine
+	go func() {
+		if err := scheduler.Start(context.Background()); err != nil {
+			log.Printf("Scheduler error: %v", err)
+		}
+	}()
+
 	// Create router
 	r := chi.NewRouter()
 
 	// Middleware
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Timeout(60 * time.Second))
-
-	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{cfg.API.AllowedOrigins},
+		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
-	// Routes
+	// API routes
 	r.Route("/api/v1/facts", func(r chi.Router) {
 		factHandler.RegisterRoutes(r)
 	})
 
-	// Create server
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", cfg.Server.Port),
-		Handler: r,
-	}
-
-	// Start server in a goroutine
+	// Trigger initial fact collection
 	go func() {
-		log.Printf("Starting server on port %s", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+		log.Println("Starting initial fact collection...")
+		if err := scheduler.CollectFacts(context.Background()); err != nil {
+			log.Printf("Error in initial fact collection: %v", err)
 		}
+		log.Println("Initial fact collection completed")
 	}()
 
-	// Wait for interrupt signal
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	// Shutdown gracefully
-	log.Println("Shutting down server...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+	// Start server
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
-	if err := db.Close(ctx); err != nil {
-		log.Printf("Error closing MongoDB connection: %v", err)
+	log.Printf("Starting server on port %s", port)
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
 	}
-
-	if err := cache.Close(); err != nil {
-		log.Printf("Error closing Redis connection: %v", err)
-	}
-
-	log.Println("Server exited properly")
 }
