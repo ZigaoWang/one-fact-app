@@ -14,9 +14,15 @@ import (
 	"github.com/ZigaoWang/one-fact-app/backend/internal/services"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Warning: Error loading .env file: %v", err)
+	}
+
 	// Initialize database
 	db, err := database.NewDatabase()
 	if err != nil {
@@ -26,6 +32,31 @@ func main() {
 
 	// Initialize services
 	factService := services.NewFactService(db)
+	factFetcher := services.NewFactFetcher(factService)
+
+	// Insert initial facts
+	if err := factService.InsertInitialFacts(context.Background()); err != nil {
+		log.Printf("Warning: Failed to insert initial facts: %v", err)
+	}
+
+	// Start fact fetcher in background
+	go func() {
+		// Fetch facts immediately on startup
+		if err := factFetcher.FetchAndStoreFacts(context.Background()); err != nil {
+			log.Printf("Initial fact fetch error: %v", err)
+		}
+
+		// Then fetch every 24 hours
+		ticker := time.NewTicker(24 * time.Hour)
+		for {
+			select {
+			case <-ticker.C:
+				if err := factFetcher.FetchAndStoreFacts(context.Background()); err != nil {
+					log.Printf("Error fetching facts: %v", err)
+				}
+			}
+		}
+	}()
 
 	// Initialize handlers
 	factHandler := handlers.NewFactHandler(factService)

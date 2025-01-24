@@ -20,7 +20,8 @@ class FactViewModel: ObservableObject {
         Category(name: "Technology", icon: "💻", color: .purple),
         Category(name: "Nature", icon: "🌿", color: .green),
         Category(name: "Space", icon: "🚀", color: .indigo),
-        Category(name: "Art", icon: "🎨", color: .pink)
+        Category(name: "Fun Facts", icon: "🎯", color: .orange),
+        Category(name: "Math", icon: "🔢", color: .pink)
     ]
     
     init() {
@@ -60,7 +61,7 @@ class FactViewModel: ObservableObject {
         showError = false
         
         do {
-            let fact = try await factService.fetchFactByCategory(category)
+            let fact = try await factService.fetchDailyFactByCategory(category)
             currentFact = fact
             
             // Update seen categories
@@ -70,6 +71,27 @@ class FactViewModel: ObservableObject {
             
             hasSeenFactToday = true
             todaysCategory = categories.first { $0.name == category }
+        } catch let error as APIError {
+            errorMessage = error.localizedDescription
+            showError = true
+            print("API Error: \(error.localizedDescription)")
+        } catch {
+            errorMessage = "An unexpected error occurred"
+            showError = true
+            print("Unexpected error: \(error.localizedDescription)")
+        }
+        
+        isLoading = false
+    }
+    
+    func fetchRandomFact() async {
+        isLoading = true
+        errorMessage = nil
+        showError = false
+        
+        do {
+            let fact = try await factService.fetchRandomFact()
+            currentFact = fact
         } catch let error as APIError {
             errorMessage = error.localizedDescription
             showError = true
@@ -98,9 +120,12 @@ class FactViewModel: ObservableObject {
         loadSeenCategories()
         checkDailyFactStatus()
         
-        // Clear cache if it's a new day
+        // Reset categories if it's a new day
         if seenCategories.isEmpty {
-            factService.clearCache()
+            // The cache is now handled by the FactService automatically
+            currentFact = nil
+            hasSeenFactToday = false
+            todaysCategory = nil
         }
     }
 }

@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'one-fact-backend'
+    static_configs:
+      - targets: ['one-fact-backend.fly.dev']
+    metrics_path: '/metrics'
+    scheme: https
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['one-fact-db.internal:5432']

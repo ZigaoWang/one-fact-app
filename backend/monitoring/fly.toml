@@ -1,0 +1,32 @@
+app = "one-fact-monitoring"
+primary_region = "sin"
+
+[build]
+  image = "prom/prometheus:latest"
+
+[env]
+  PROMETHEUS_CONFIG = "/etc/prometheus/prometheus.yml"
+
+[mounts]
+  source = "prometheus_data"
+  destination = "/prometheus"
+
+[http_service]
+  internal_port = 9090
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/-/healthy"
+    protocol = "http"
+    timeout = "5s"
+    tls_skip_verify = false
+
+[metrics]
+  port = 9090
+  path = "/metrics"
