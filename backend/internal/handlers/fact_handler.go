@@ -79,11 +79,21 @@ func (h *FactHandler) SearchFacts(w http.ResponseWriter, r *http.Request) {
 
 func (h *FactHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
 	categories := []string{
-		"Technology",
 		"Science",
+		"Technology",
 		"History",
-		"Nature",
+		"Geography",
+		"Arts",
+		"Culture",
+		"Sports",
+		"Entertainment",
+		"Politics",
+		"Business",
+		"Education",
+		"Health",
+		"Environment",
 		"Space",
+		"Nature",
 		"Mathematics",
 	}
 	respondJSON(w, categories)
