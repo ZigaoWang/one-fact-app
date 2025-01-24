@@ -1,17 +1,17 @@
 # One Fact Backend
 
-A modern, scalable backend for the One Fact app using Go, MongoDB, and Redis.
+A modern, automated fact collection and distribution API built with Go, MongoDB, and Redis.
 
 ## Features
 
-- Clean, modular architecture
+- Automated fact collection from multiple sources
+- Intelligent fact processing and validation
+- Content scheduling and rotation
+- RESTful API endpoints
 - MongoDB for persistent storage
 - Redis for caching and performance
-- RESTful API endpoints
 - Full-text search support
 - Fact categorization and tagging
-- Automatic daily fact rotation
-- Performance metrics and tracking
 
 ## Prerequisites
 
@@ -26,6 +26,9 @@ backend/
 ├── cmd/
 │   └── api/            # Application entrypoints
 ├── internal/
+│   ├── collectors/     # Fact collection sources
+│   ├── processors/     # Fact validation and enrichment
+│   ├── scheduler/      # Automated collection scheduling
 │   ├── config/         # Configuration management
 │   ├── models/         # Data models
 │   ├── handlers/       # HTTP handlers
@@ -36,11 +39,51 @@ backend/
 
 ## API Endpoints
 
-- `GET /api/v1/facts/daily` - Get the daily fact
+### Facts
+
+- `GET /api/v1/facts/daily` - Get today's fact
+  - Response: Single fact object
+  - No parameters required
+
+- `GET /api/v1/facts/random` - Get a random fact
+  - Response: Single fact object
+  - No parameters required
+
 - `GET /api/v1/facts/search` - Search facts with filters
-- `POST /api/v1/facts` - Add a new fact
-- `PUT /api/v1/facts/{id}` - Update a fact
-- `DELETE /api/v1/facts/{id}` - Delete a fact
+  - Parameters:
+    - `q` (string, optional): Search query
+    - `category` (string, optional): Filter by category
+    - `tag` (string, optional): Filter by tag
+  - Response: Array of facts
+
+- `GET /api/v1/facts/categories` - Get all available categories
+  - Response: Array of category strings
+
+- `GET /api/v1/facts/category/{category}` - Get facts by category
+  - Parameters:
+    - `category` (string): Category name in URL
+  - Response: Array of facts
+
+### Fact Object Structure
+
+```json
+{
+  "id": "string",
+  "content": "string",
+  "source": "string",
+  "category": "string",
+  "tags": ["string"],
+  "urls": ["string"],
+  "metadata": {
+    "key": "value"
+  },
+  "verified": boolean,
+  "score": number,
+  "created_at": "datetime",
+  "updated_at": "datetime",
+  "publish_date": "datetime"
+}
+```
 
 ## Setup
 
@@ -50,9 +93,9 @@ backend/
    ```bash
    go mod download
    ```
-4. Run the server:
+4. Run the setup script:
    ```bash
-   go run cmd/api/main.go
+   ./scripts/setup.sh
    ```
 
 ## Configuration
@@ -87,3 +130,25 @@ Run in production:
 ```bash
 ./server
 ```
+
+## Docker Deployment
+
+Build the Docker image:
+
+```bash
+docker build -t one-fact-backend .
+```
+
+Run with Docker:
+
+```bash
+docker run -p 8080:8080 one-fact-backend
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
