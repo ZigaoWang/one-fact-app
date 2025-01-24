@@ -11,7 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
-	"github.com/zigaowang/one-fact-app/internal/processors"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/processors"
 )
 
 // FactHandler handles fact-related HTTP endpoints

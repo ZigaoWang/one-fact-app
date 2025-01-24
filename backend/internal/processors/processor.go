@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zigaowang/one-fact-app/internal/collectors"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/collectors"
 )
 
 // ProcessedFact represents a fact that has been validated and enriched

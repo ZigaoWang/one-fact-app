@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zigaowang/one-fact-app/internal/collectors"
-	"github.com/zigaowang/one-fact-app/internal/processors"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/collectors"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/processors"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
