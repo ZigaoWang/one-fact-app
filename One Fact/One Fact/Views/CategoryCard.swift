@@ -26,8 +26,9 @@ struct CategoryCard: View {
                             .frame(width: 80, height: 80)
                     }
                     
-                    Text(category.icon)
+                    Image(systemName: category.icon)
                         .font(.system(size: 36))
+                        .foregroundColor(category.color)
                         .matchedGeometryEffect(id: "icon", in: animation)
                 }
                 .scaleEffect(isHovered ? 1.1 : 1.0)

@@ -28,7 +28,7 @@ struct Fact: Codable, Identifiable {
     var relatedArticles: [RelatedArticle] {
         // Convert relatedURLs to RelatedArticle objects
         return relatedURLs.enumerated().map { index, url in
-            let keyword = metadata.keywords.isEmpty ? category : metadata.keywords[0]
+            let keyword = (metadata.keywords?.first ?? category)
             let snippet = "Learn more about \(keyword) from \(source)"
             return RelatedArticle(
                 id: index,
@@ -60,10 +60,10 @@ struct Fact: Codable, Identifiable {
 }
 
 struct FactMetadata: Codable {
-    let language: String
-    let difficulty: String
-    let references: [String]
-    let keywords: [String]
+    let language: String?
+    let difficulty: String?
+    let references: [String]?
+    let keywords: [String]?
     let popularity: Int
     let lastServed: Date
     let serveCount: Int
@@ -76,6 +76,17 @@ struct FactMetadata: Codable {
         case popularity
         case lastServed = "last_served"
         case serveCount = "serve_count"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        language = try container.decodeIfPresent(String.self, forKey: .language) ?? ""
+        difficulty = try container.decodeIfPresent(String.self, forKey: .difficulty) ?? ""
+        references = try container.decodeIfPresent([String].self, forKey: .references) ?? []
+        keywords = try container.decodeIfPresent([String].self, forKey: .keywords) ?? []
+        popularity = try container.decodeIfPresent(Int.self, forKey: .popularity) ?? 0
+        lastServed = try container.decode(Date.self, forKey: .lastServed)
+        serveCount = try container.decodeIfPresent(Int.self, forKey: .serveCount) ?? 0
     }
 }
 
