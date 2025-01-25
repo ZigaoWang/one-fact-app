@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  backend:
+    environment:
+      - ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/onefact_prod
+      - REDIS_URI=redis:6379
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mongodb:
+    command: ["mongod", "--auth"]
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+    volumes:
+      - mongodb_prod_data:/data/db
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  redis:
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_prod_data:/data
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  admin-panel:
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=${API_URL}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  mongodb_prod_data:
+    driver: local
+  redis_prod_data:
+    driver: local
