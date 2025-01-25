@@ -12,7 +12,14 @@ class FactViewModel: ObservableObject {
     
     private let factService: FactService
     
-    let categories: [Category] = Category.allCategories
+    let categories: [Category] = [
+        Category(name: "Science", icon: "🔬", color: .blue),
+        Category(name: "History", icon: "📜", color: .brown),
+        Category(name: "Technology", icon: "💻", color: .purple),
+        Category(name: "Nature", icon: "🌿", color: .green),
+        Category(name: "Space", icon: "🚀", color: .indigo),
+        Category(name: "Art", icon: "🎨", color: .pink)
+    ]
     
     init() {
         self.factService = FactService()

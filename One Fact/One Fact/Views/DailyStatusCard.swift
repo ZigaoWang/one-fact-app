@@ -15,9 +15,8 @@ struct DailyStatusCard: View {
                 Spacer()
                 
                 if hasSeenFactToday, let category = category {
-                    Image(systemName: category.icon)
+                    Text(category.icon)
                         .font(.title2)
-                        .foregroundColor(category.color)
                 }
             }
             

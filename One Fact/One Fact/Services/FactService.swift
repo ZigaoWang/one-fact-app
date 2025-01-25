@@ -210,7 +210,7 @@ class FactService: ObservableObject {
     func getRelatedArticles(for fact: Fact) -> [RelatedArticle] {
         // Convert relatedURLs to RelatedArticle objects using the metadata
         return fact.relatedURLs.enumerated().map { index, url in
-            let keyword = (fact.metadata.keywords?.first ?? fact.category)
+            let keyword = fact.metadata.keywords.isEmpty ? fact.category : fact.metadata.keywords[0]
             let snippet = "Learn more about \(keyword) from \(fact.source)"
             
             return RelatedArticle(
