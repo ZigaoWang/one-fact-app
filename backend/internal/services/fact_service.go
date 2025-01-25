@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZigaoWang/one-fact-app/backend/internal/database"
 	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/scheduler"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -28,14 +29,14 @@ func NewFactService(db *database.Database, cache *database.Cache) *FactService {
 }
 
 func (s *FactService) GetDailyFact(ctx context.Context, category string, isTest bool) (*models.Fact, error) {
-	// Try to get from cache first (only if not in test mode)
-	if !isTest {
-		if fact, err := s.cache.GetDailyFact(ctx); err == nil && fact != nil {
-			if fact.Category == category {
-				return fact, nil
-			}
-		}
-	}
+    // Try to get from cache first (only if not in test mode and cache is available)
+    if !isTest && s.cache != nil {
+        if fact, err := s.cache.GetDailyFact(ctx); err == nil && fact != nil {
+            if fact.Category == category {
+                return fact, nil
+            }
+        }
+    }
 
 	// Get a random fact that hasn't been served recently for the specific category
 	collection := s.db.GetCollection("facts")

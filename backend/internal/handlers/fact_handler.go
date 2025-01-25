@@ -1,14 +1,13 @@
 package handlers
 
 import (
-    "encoding/json"
-    "net/http"
+	"encoding/json"
+	"net/http"
 
-    "github.com/go-chi/chi/v5"
-    "github.com/ZigaoWang/one-fact-app/backend/internal/models"
-    "github.com/ZigaoWang/one-fact-app/backend/internal/services"
-    "github.com/ZigaoWang/one-fact-app/backend/internal/collectors"
-    "go.mongodb.org/mongo-driver/bson/primitive"
+	"github.com/go-chi/chi/v5"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
+	"github.com/ZigaoWang/one-fact-app/backend/internal/services"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type FactHandler struct {
@@ -31,6 +30,7 @@ func (h *FactHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/", h.AddFact)
 	r.Put("/{id}", h.UpdateFact)
 	r.Delete("/{id}", h.DeleteFact)
+	r.Post("/collect", h.TriggerCollection)
 }
 
 func (h *FactHandler) GetDailyFact(w http.ResponseWriter, r *http.Request) {
@@ -80,16 +80,22 @@ func (h *FactHandler) SearchFacts(w http.ResponseWriter, r *http.Request) {
 
 func (h *FactHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
 	categories := []string{
+		"Science",
 		"Technology",
 		"History",
-		"General",
-		"Science",
+		"Geography",
+		"Arts",
 		"Culture",
+		"Sports",
+		"Entertainment",
+		"Politics",
 		"Business",
 		"Education",
-		"Geography",
-		"Politics",
 		"Health",
+		"Environment",
+		"Space",
+		"Nature",
+		"Mathematics",
 	}
 	respondJSON(w, categories)
 }
@@ -179,17 +185,11 @@ func respondJSON(w http.ResponseWriter, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-func (h *FactHandler) TriggerWikipediaCollection(w http.ResponseWriter, r *http.Request) {
+func (h *FactHandler) TriggerCollection(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-    collector := collectors.NewWikipediaCollector(h.factService)
-    if err := collector.Collect(ctx); err != nil {
+    if err := h.factService.CollectFacts(ctx); err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
     }
     w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Wikipedia collection started"))
-}
-
-func (s *FactService) GetCollection(name string) *mongo.Collection {
-    return s.db.GetCollection(name)
 }
