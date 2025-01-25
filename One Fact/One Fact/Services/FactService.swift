@@ -28,11 +28,7 @@ enum APIError: Error, LocalizedError {
 
 @MainActor
 class FactService: ObservableObject {
-    #if DEBUG
-    private let baseURL = "http://localhost:8080/api/v1/facts"
-    #else
-    private let baseURL = "https://your-production-url.com/api/v1/facts"
-    #endif
+    private let baseURL = "https://one-fact-api.fly.dev/api/v1/facts"
     
     private let cache = NSCache<NSString, CachedFact>()
     private let defaults = UserDefaults.standard
@@ -210,7 +206,7 @@ class FactService: ObservableObject {
     func getRelatedArticles(for fact: Fact) -> [RelatedArticle] {
         // Convert relatedURLs to RelatedArticle objects using the metadata
         return fact.relatedURLs.enumerated().map { index, url in
-            let keyword = fact.metadata.keywords.isEmpty ? fact.category : fact.metadata.keywords[0]
+            let keyword = (fact.metadata.keywords?.first ?? fact.category)
             let snippet = "Learn more about \(keyword) from \(fact.source)"
             
             return RelatedArticle(

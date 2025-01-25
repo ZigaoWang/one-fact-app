@@ -46,8 +46,9 @@ struct FactDetailView: View {
                                         .frame(width: 100, height: 100)
                                         .matchedGeometryEffect(id: "background", in: animation)
                                     
-                                    Text(category.icon)
+                                    Image(systemName: category.icon)
                                         .font(.system(size: 48))
+                                        .foregroundColor(category.color)
                                         .matchedGeometryEffect(id: "icon", in: animation)
                                 }
                                 .opacity(showContent ? 1 : 0)
