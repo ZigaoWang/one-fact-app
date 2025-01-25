@@ -1,13 +1,14 @@
 package handlers
 
 import (
-	"encoding/json"
-	"net/http"
+    "encoding/json"
+    "net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/ZigaoWang/one-fact-app/backend/internal/models"
-	"github.com/ZigaoWang/one-fact-app/backend/internal/services"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+    "github.com/go-chi/chi/v5"
+    "github.com/ZigaoWang/one-fact-app/backend/internal/models"
+    "github.com/ZigaoWang/one-fact-app/backend/internal/services"
+    "github.com/ZigaoWang/one-fact-app/backend/internal/collectors"
+    "go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type FactHandler struct {
@@ -186,7 +187,7 @@ func respondJSON(w http.ResponseWriter, data interface{}) {
 
 func (h *FactHandler) TriggerWikipediaCollection(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-    collector := collectors.NewWikipediaCollector(h.factService.GetDB())
+    collector := collectors.NewWikipediaCollector(h.factService)
     if err := collector.Collect(ctx); err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
         return
@@ -195,6 +196,6 @@ func (h *FactHandler) TriggerWikipediaCollection(w http.ResponseWriter, r *http.
     w.Write([]byte("Wikipedia collection started"))
 }
 
-func (s *FactService) GetDB() *database.Database {
-    return s.db
+func (s *FactService) GetCollection(name string) *mongo.Collection {
+    return s.db.GetCollection(name)
 }

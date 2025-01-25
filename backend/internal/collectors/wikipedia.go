@@ -34,6 +34,12 @@ func NewWikipediaSource() *WikipediaSource {
 	}
 }
 
+func NewWikipediaCollector(service *services.FactService) *WikipediaCollector {
+    return &WikipediaCollector{
+        service: service,
+    }
+}
+
 // Name returns the source name
 func (w *WikipediaSource) Name() string {
 	return "Wikipedia"
