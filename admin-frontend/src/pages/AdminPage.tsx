@@ -161,7 +161,11 @@ export const AdminPage: React.FC = () => {
   };
 
   return (
-    <Box>
+    <Box sx={{ 
+      minHeight: '100vh',
+      width: '100vw',
+      bgcolor: 'background.default'
+    }}>
       <AppBar position="static" elevation={0}>
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
@@ -178,7 +182,14 @@ export const AdminPage: React.FC = () => {
         </Toolbar>
       </AppBar>
 
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
+      <Container
+        maxWidth="xl"
+        sx={{
+          mt: 4,
+          pb: 4,
+          height: '100%',
+        }}
+      >
         {/* Stats Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           <Grid item xs={12} md={4}>
