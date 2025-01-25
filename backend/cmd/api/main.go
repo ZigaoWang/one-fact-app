@@ -72,10 +72,22 @@ func main() {
 		MaxAge:           300,
 	}))
 
+	// Health check route
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	// API routes
 	r.Route("/api/v1/facts", func(r chi.Router) {
 		factHandler.RegisterRoutes(r)
 	})
+
+	// Admin routes
+r.Route("/api/v1/admin", func(r chi.Router) {
+    r.Use(handlers.AdminAuthMiddleware(cfg.API.Secret))
+    r.Post("/collect/wikipedia", factHandler.TriggerWikipediaCollection)
+})
 
 	// Trigger initial fact collection
 	go func() {
@@ -93,7 +105,7 @@ func main() {
 	}
 
 	log.Printf("Starting server on port %s", port)
-	if err := http.ListenAndServe(":"+port, r); err != nil {
+	if err := http.ListenAndServe("0.0.0.0:"+port, r); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

@@ -183,3 +183,18 @@ func respondJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
 }
+
+func (h *FactHandler) TriggerWikipediaCollection(w http.ResponseWriter, r *http.Request) {
+    ctx := r.Context()
+    collector := collectors.NewWikipediaCollector(h.factService.GetDB())
+    if err := collector.Collect(ctx); err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Wikipedia collection started"))
+}
+
+func (s *FactService) GetDB() *database.Database {
+    return s.db
+}
