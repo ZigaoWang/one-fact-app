@@ -10,9 +10,9 @@ RED := $(shell tput setaf 1)
 RESET := $(shell tput sgr0)
 
 # Check for required tools
-DOCKER := $(shell command -v docker 2> /dev/null)
-DOCKER_COMPOSE := $(shell command -v docker-compose 2> /dev/null)
 BREW := $(shell command -v brew 2> /dev/null)
+DOCKER_RUNNING := $(shell docker info >/dev/null 2>&1 && echo 1 || echo 0)
+DOCKER_COMPOSE := $(shell command -v docker-compose 2> /dev/null)
 
 # Installation and setup
 install: check-deps
@@ -28,18 +28,24 @@ ifndef BREW
 	@echo "$(RED)Homebrew is not installed. Installing...$(RESET)"
 	@/bin/bash -c "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 endif
-ifndef DOCKER
-	@echo "$(RED)Docker is not installed. Installing...$(RESET)"
-	@brew install --cask docker
+ifeq ($(DOCKER_RUNNING),0)
+	@echo "$(RED)Docker is not running. Installing/Starting Docker...$(RESET)"
+	@if ! command -v docker >/dev/null 2>&1; then \
+		brew install --cask docker; \
+	fi
 	@echo "$(YELLOW)Please open Docker Desktop and complete the installation.$(RESET)"
 	@echo "$(YELLOW)After Docker is running, press any key to continue...$(RESET)"
 	@read -n 1
+	@until docker info >/dev/null 2>&1; do \
+		echo "$(YELLOW)Waiting for Docker to start...$(RESET)"; \
+		sleep 2; \
+	done
 endif
 ifndef DOCKER_COMPOSE
 	@echo "$(RED)Docker Compose is not installed. Installing...$(RESET)"
 	@brew install docker-compose
 endif
-	@echo "$(GREEN)All dependencies are installed!$(RESET)"
+	@echo "$(GREEN)All dependencies are installed and Docker is running!$(RESET)"
 
 # Development commands
 start: check-deps
