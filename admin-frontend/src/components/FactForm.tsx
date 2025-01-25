@@ -50,8 +50,6 @@ export const FactForm: React.FC<FactFormProps> = ({
 
   const [newTag, setNewTag] = useState('');
   const [newUrl, setNewUrl] = useState('');
-  const [newKeyword, setNewKeyword] = useState('');
-  const [newReference, setNewReference] = useState('');
 
   useEffect(() => {
     if (fact) {
@@ -95,32 +93,6 @@ export const FactForm: React.FC<FactFormProps> = ({
         related_urls: [...prev.related_urls, newUrl],
       }));
       setNewUrl('');
-    }
-  };
-
-  const handleAddKeyword = () => {
-    if (newKeyword && !formData.metadata.keywords.includes(newKeyword)) {
-      setFormData((prev) => ({
-        ...prev,
-        metadata: {
-          ...prev.metadata,
-          keywords: [...prev.metadata.keywords, newKeyword],
-        },
-      }));
-      setNewKeyword('');
-    }
-  };
-
-  const handleAddReference = () => {
-    if (newReference && !formData.metadata.references.includes(newReference)) {
-      setFormData((prev) => ({
-        ...prev,
-        metadata: {
-          ...prev.metadata,
-          references: [...prev.metadata.references, newReference],
-        },
-      }));
-      setNewReference('');
     }
   };
 

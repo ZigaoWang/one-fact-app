@@ -16,10 +16,8 @@ import {
   Card,
   CardContent,
   Grid,
-  IconButton,
   Chip,
   Stack,
-  Divider,
   CircularProgress,
 } from '@mui/material';
 import {
@@ -40,7 +38,11 @@ export const AdminPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [selectedFact, setSelectedFact] = useState<Fact | undefined>();
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as const });
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+  }>({ open: false, message: '', severity: 'success' });
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({
     total: 0,
