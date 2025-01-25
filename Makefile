@@ -1,4 +1,4 @@
-.PHONY: install start stop restart logs clean prod-up prod-down backup check-deps install-deps
+.PHONY: install start stop restart logs clean prod-up prod-down backup check-deps install-deps docker-cleanup
 
 # Default environment
 ENV ?= development
@@ -22,6 +22,18 @@ install: check-deps
 	@cp backend/.env.example backend/.env
 	@echo "$(GREEN)Installation complete!$(RESET)"
 
+# Docker cleanup
+docker-cleanup:
+	@echo "$(YELLOW)Warning: This will completely remove Docker and all its components.$(RESET)"
+	@read -p "Are you sure you want to proceed? [y/N] " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		echo "$(YELLOW)Cleaning up Docker installation...$(RESET)"; \
+		./scripts/cleanup-docker.sh; \
+		echo "$(GREEN)Docker cleanup complete!$(RESET)"; \
+	else \
+		echo "$(YELLOW)Docker cleanup cancelled.$(RESET)"; \
+	fi
+
 # Check and install dependencies
 check-deps:
 ifndef BREW
@@ -29,14 +41,26 @@ ifndef BREW
 	@/bin/bash -c "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 endif
 ifeq ($(DOCKER_RUNNING),0)
-	@echo "$(RED)Docker is not running. Installing/Starting Docker...$(RESET)"
+	@echo "$(RED)Docker is not running.$(RESET)"
 	@if ! command -v docker >/dev/null 2>&1; then \
-		brew install --cask docker; \
-	fi
-	@echo "$(YELLOW)Please open Docker Desktop and complete the installation.$(RESET)"
-	@echo "$(YELLOW)After Docker is running, press any key to continue...$(RESET)"
-	@read -n 1
-	@until docker info >/dev/null 2>&1; do \
+		echo "$(YELLOW)Docker is not installed. Would you like to install it? [y/N]$(RESET)"; \
+		read confirm; \
+		if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+			echo "$(YELLOW)Installing Docker...$(RESET)"; \
+			brew install --cask docker; \
+			echo "$(YELLOW)Please open Docker Desktop and complete the installation.$(RESET)"; \
+			echo "$(YELLOW)After Docker is running, press any key to continue...$(RESET)"; \
+			read -n 1; \
+		else \
+			echo "$(RED)Docker is required to run this application.$(RESET)"; \
+			exit 1; \
+		fi \
+	else \
+		echo "$(YELLOW)Docker is installed but not running.$(RESET)"; \
+		echo "$(YELLOW)Please start Docker Desktop and press any key to continue...$(RESET)"; \
+		read -n 1; \
+	fi; \
+	until docker info >/dev/null 2>&1; do \
 		echo "$(YELLOW)Waiting for Docker to start...$(RESET)"; \
 		sleep 2; \
 	done
@@ -102,3 +126,4 @@ help:
 	@echo "  make prod-up      - Start production environment"
 	@echo "  make prod-down    - Stop production environment"
 	@echo "  make backup       - Create backup of databases"
+	@echo "  make docker-cleanup - Clean up Docker installation"
