@@ -207,3 +207,9 @@ func (s *FactService) DeleteFact(ctx context.Context, id primitive.ObjectID) err
 	_, err := collection.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
+
+func (s *FactService) CollectFacts(ctx context.Context) error {
+    collection := s.db.GetCollection("facts")
+    scheduler := scheduler.NewScheduler(collection)
+    return scheduler.CollectFacts(ctx)
+}

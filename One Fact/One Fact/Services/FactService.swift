@@ -28,11 +28,7 @@ enum APIError: Error, LocalizedError {
 
 @MainActor
 class FactService: ObservableObject {
-    #if DEBUG
-    private let baseURL = "http://localhost:8080/api/v1/facts"
-    #else
-    private let baseURL = "https://your-production-url.com/api/v1/facts"
-    #endif
+    private let baseURL = "https://one-fact-api.fly.dev/api/v1/facts"
     
     private let cache = NSCache<NSString, CachedFact>()
     private let defaults = UserDefaults.standard
