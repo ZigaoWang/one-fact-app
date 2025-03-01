@@ -24,7 +24,7 @@ WORKDIR /app
 
 # Copy the binary from builder
 COPY --from=0 /app/main .
-COPY --from=0 /app/.env.example .env
+# We'll use environment variables from Fly.io secrets instead of copying the .env file
 
 # Expose the application port
 EXPOSE 8080

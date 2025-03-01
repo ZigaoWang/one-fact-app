@@ -5,9 +5,11 @@ struct FactDetailView: View {
     @EnvironmentObject private var viewModel: FactViewModel
     @State private var showContent = false
     @State private var showRelatedArticles = false
+    @State private var showChat = false
     @State private var cardRotation: Double = 0
     @State private var dragState = DragState.inactive
     @State private var scrollOffset: CGFloat = 0
+    @State private var selectedTab = 0
     @Namespace private var animation
     
     let category: Category
@@ -175,6 +177,62 @@ struct FactDetailView: View {
                                 .opacity(showContent ? 1 : 0)
                                 .offset(y: showContent ? 0 : 40)
                                 
+                                // AI Exploration
+                                VStack(alignment: .leading, spacing: 16) {
+                                    // Header
+                                    Text("AI Knowledge Explorer")
+                                        .font(.title3.bold())
+                                        .foregroundColor(.primary)
+                                    
+                                    Text("Dive deeper into today's fact with the help of AI. Ask questions, explore related concepts, or learn about practical applications.")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                        .padding(.bottom, 8)
+                                    
+                                    // Chat Button
+                                    Button {
+                                        withAnimation {
+                                            showChat = true
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                                .font(.system(size: 20))
+                                            Text("Ask AI Assistant")
+                                                .font(.headline)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 14))
+                                        }
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .fill(
+                                                    LinearGradient(
+                                                        colors: [category.color, category.color.opacity(0.8)],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .shadow(color: category.color.opacity(0.3), radius: 10, x: 0, y: 5)
+                                        )
+                                    }
+                                }
+                                .padding(24)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                        .fill(Color(.systemBackground))
+                                        .shadow(
+                                            color: category.color.opacity(0.1),
+                                            radius: 20,
+                                            x: 0,
+                                            y: 10
+                                        )
+                                )
+                                .opacity(showContent ? 1 : 0)
+                                .offset(y: showContent ? 0 : 40)
+                                
                                 // Related articles
                                 if !fact.relatedArticles.isEmpty {
                                     RelatedArticlesSection(articles: fact.relatedArticles, category: category)
@@ -213,6 +271,42 @@ struct FactDetailView: View {
                         .padding()
                     }
                     Spacer()
+                }
+                
+                // Chat sheet
+                .sheet(isPresented: $showChat) {
+                    if let fact = viewModel.currentFact {
+                        VStack(spacing: 0) {
+                            // Custom sheet header
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Text("AI Knowledge Explorer")
+                                        .font(.headline)
+                                    
+                                    Spacer()
+                                    
+                                    Button {
+                                        showChat = false
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 24))
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                
+                                Text("Ask questions about today's fact to explore deeper")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            
+                            // Chat content
+                            ChatView(fact: fact)
+                        }
+                        .background(Color(.systemBackground))
+                        .edgesIgnoringSafeArea(.bottom)
+                    }
                 }
             }
         }

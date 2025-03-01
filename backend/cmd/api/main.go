@@ -43,9 +43,11 @@ func main() {
 
 	// Create services
 	factService := services.NewFactService(db, cache)
+	aiService := services.NewAIService()
 
 	// Create handlers
 	factHandler := handlers.NewFactHandler(factService)
+	chatHandler := handlers.NewChatHandler(factService, aiService)
 
 	// Initialize fact scheduler
 	scheduler := scheduler.NewScheduler(db.GetCollection("facts"))
@@ -75,6 +77,10 @@ func main() {
 	// API routes
 	r.Route("/api/v1/facts", func(r chi.Router) {
 		factHandler.RegisterRoutes(r)
+	})
+
+	r.Route("/api/v1/chat", func(r chi.Router) {
+		chatHandler.RegisterRoutes(r)
 	})
 
 	// Trigger initial fact collection

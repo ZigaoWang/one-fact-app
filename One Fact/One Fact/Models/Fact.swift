@@ -68,6 +68,18 @@ struct FactMetadata: Codable {
     let lastServed: Date
     let serveCount: Int
     
+    // Custom initializer for creating instances directly
+    init(language: String?, difficulty: String?, references: [String]?, keywords: [String]?, 
+         popularity: Int, lastServed: Date, serveCount: Int) {
+        self.language = language
+        self.difficulty = difficulty
+        self.references = references
+        self.keywords = keywords
+        self.popularity = popularity
+        self.lastServed = lastServed
+        self.serveCount = serveCount
+    }
+    
     enum CodingKeys: String, CodingKey {
         case language
         case difficulty
