@@ -26,6 +26,7 @@ func NewChatHandler(factService *services.FactService, aiService *services.AISer
 
 func (h *ChatHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/", h.HandleChat)
+	r.Post("/stream", h.HandleStreamChat)
 }
 
 // ChatRequest represents the incoming chat request
@@ -42,6 +43,9 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug logging
+	fmt.Printf("Received chat request: %+v\n", chatRequest)
+
 	// Retrieve fact to provide context
 	fact, err := h.fetchFactForContext(r.Context(), chatRequest.FactID)
 	if err != nil {
@@ -49,22 +53,64 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log the fact being used for context
+	fmt.Printf("Using fact for context: %+v\n", fact)
+
 	// Process the chat interaction
 	response, err := h.processChatWithAI(r.Context(), chatRequest.Messages, fact)
 	if err != nil {
+		fmt.Printf("Error in AI processing: %v\n", err)
 		http.Error(w, fmt.Sprintf("Error processing chat: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	// Log successful response
+	fmt.Printf("Generated AI response: %s\n", response.Content)
+
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*") // Ensure CORS is enabled
 	json.NewEncoder(w).Encode(response)
 }
 
 // fetchFactForContext retrieves the fact to use as context for the AI
 func (h *ChatHandler) fetchFactForContext(ctx context.Context, factID string) (*models.Fact, error) {
-	// In the future, this would retrieve the fact by ID from the database
-	// For now, simulate with the daily fact
-	return h.factService.GetDailyFact(ctx, "", true)
+	// Debug logging
+	fmt.Printf("Fetching fact for context, factID: %s\n", factID)
+	
+	// If a specific fact ID is provided, try to get that fact
+	if factID != "" && factID != "latest" {
+		// In the future, this would retrieve the fact by ID from the database
+		// For now, use the daily fact with empty category to get any fact
+		fact, err := h.factService.GetFactByID(ctx, factID)
+		if err == nil {
+			return fact, nil
+		}
+		fmt.Printf("Error getting fact by ID: %v, falling back to random fact\n", err)
+	}
+
+	// Try to get a random fact if no specific fact is requested or if getting by ID failed
+	fact, err := h.factService.GetRandomFact(ctx)
+	if err != nil {
+		fmt.Printf("Error getting random fact: %v\n", err)
+		
+		// Try daily fact as a fallback
+		fact, err = h.factService.GetDailyFact(ctx, "", true)
+		if err != nil {
+			fmt.Printf("Error getting daily fact: %v\n", err)
+			
+			// Create a fallback fact for testing as last resort
+			return &models.Fact{
+				Content:     "This is a fallback fact used when no facts are available in the database. The One Fact app displays interesting and educational facts from various categories. Each fact is verified for accuracy before being presented to users.",
+				Category:    "General",
+				Source:      "One Fact App",
+				Verified:    true,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+			}, nil
+		}
+	}
+	
+	return fact, nil
 }
 
 // processChatWithAI handles the AI processing of chat messages

@@ -209,6 +209,24 @@ func (s *FactService) DeleteFact(ctx context.Context, id primitive.ObjectID) err
 	return err
 }
 
+// GetFactByID retrieves a fact by its string ID
+func (s *FactService) GetFactByID(ctx context.Context, id string) (*models.Fact, error) {
+	// Try to convert the string ID to ObjectID
+	objID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, err
+	}
+	
+	collection := s.db.GetCollection("facts")
+	var fact models.Fact
+	err = collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&fact)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &fact, nil
+}
+
 func (s *FactService) CollectFacts(ctx context.Context) error {
     collection := s.db.GetCollection("facts")
     scheduler := scheduler.NewScheduler(collection)
