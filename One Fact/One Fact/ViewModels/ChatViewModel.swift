@@ -9,6 +9,8 @@ class ChatViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var showError = false
+    @Published var streamingMessage: String = ""
+    @Published var isStreaming = false
     
     private let chatService: ChatService
     private var currentFactId: String?
@@ -67,31 +69,74 @@ class ChatViewModel: ObservableObject {
         
         // Show loading state
         isLoading = true
+        isStreaming = true
+        streamingMessage = ""
         errorMessage = nil
         showError = false
         
-        do {
-            // Use the real API if we have a factId
-            if let factId = currentFactId {
-                // Get only messages that should be sent to the API (not system messages)
-                let response = try await chatService.sendMessage(factId: factId, messages: messages)
-                messages.append(response)
-            } else {
-                // Fallback to simulation if we don't have a factId for some reason
+        // Use the real API if we have a factId
+        if let factId = currentFactId {
+            // Try streaming first
+            streamChat(factId: factId, userMessage: userMessage)
+        } else {
+            // Fallback to simulation if we don't have a factId for some reason
+            do {
                 let response = await chatService.simulateResponse(to: userMessage.content)
                 messages.append(response)
+            } catch {
+                errorMessage = "An unexpected error occurred"
+                showError = true
+                print("Unexpected error: \(error.localizedDescription)")
             }
-        } catch let error as ChatError {
-            errorMessage = error.errorMessage
-            showError = true
-            print("Chat Error: \(error.localizedDescription)")
-        } catch {
-            errorMessage = "An unexpected error occurred"
-            showError = true
-            print("Unexpected error: \(error.localizedDescription)")
+            isLoading = false
+            isStreaming = false
         }
-        
-        isLoading = false
+    }
+    
+    private func streamChat(factId: String, userMessage: Message) {
+        // Start streaming response
+        chatService.streamMessage(factId: factId, messages: messages) { [weak self] chunk in
+            guard let self = self else { return }
+            // Append each chunk to the streaming message on the main thread
+            DispatchQueue.main.async {
+                self.streamingMessage += chunk
+            }
+        } onComplete: { [weak self] result in
+            guard let self = self else { return }
+            
+            // Handle completion
+            switch result {
+            case .success(let message):
+                // Add the complete message to the conversation
+                self.messages.append(message)
+            case .failure(let error):
+                if let chatError = error as? ChatError {
+                    self.errorMessage = chatError.errorMessage
+                } else {
+                    self.errorMessage = error.localizedDescription
+                }
+                self.showError = true
+                print("Chat Error: \(error.localizedDescription)")
+                
+                // Fallback to non-streaming API if streaming fails
+                Task {
+                    do {
+                        let response = try await self.chatService.sendMessage(factId: factId, messages: self.messages)
+                        self.messages.append(response)
+                    } catch let error {
+                        self.errorMessage = "Failed to get response: \(error.localizedDescription)"
+                        self.showError = true
+                    }
+                }
+            }
+            
+            // Reset streaming state after a small delay to ensure smooth transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.isLoading = false
+                self.isStreaming = false
+                self.streamingMessage = ""
+            }
+        }
     }
 }
 

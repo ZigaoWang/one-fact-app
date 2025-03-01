@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ChatView: View {
     @StateObject private var viewModel = ChatViewModel()
@@ -8,7 +9,7 @@ struct ChatView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // Background
-            Color(.systemBackground)
+            Color(.systemGray6)
                 .edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 0) {
@@ -17,6 +18,7 @@ struct ChatView: View {
                 
                 // Messages
                 chatMessages
+                    .dismissKeyboardOnTap()
                 
                 // Input area
                 inputArea
@@ -38,7 +40,7 @@ struct ChatView: View {
     private var chatHeader: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("AI Knowledge Explorer")
+                Text("Fact Explorer")
                     .font(.headline)
                     .foregroundColor(.primary)
                 
@@ -54,6 +56,7 @@ struct ChatView: View {
             Divider()
         }
         .background(Color(.systemBackground))
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
     
     // Chat messages area
@@ -70,8 +73,13 @@ struct ChatView: View {
                                 .font(.system(size: 40))
                                 .foregroundColor(.white)
                                 .padding(20)
-                                .background(Color.blue.gradient)
+                                .background(
+                                    LinearGradient(gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]), 
+                                                  startPoint: .topLeading, 
+                                                  endPoint: .bottomTrailing)
+                                )
                                 .clipShape(Circle())
+                                .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
                             
                             Text("How can I help you learn about today's fact?")
                                 .font(.headline)
@@ -83,6 +91,30 @@ struct ChatView: View {
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 32)
                                 .lineLimit(2)
+                            
+                            // Example questions
+                            VStack(spacing: 10) {
+                                Text("Try asking:")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.top, 16)
+                                
+                                ForEach(["Tell me more about this fact", "Why is this important?", "How does this relate to everyday life?"], id: \.self) { question in
+                                    Button(action: {
+                                        viewModel.inputMessage = question
+                                        Task {
+                                            await viewModel.sendMessage()
+                                        }
+                                    }) {
+                                        Text(question)
+                                            .font(.caption)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 8)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(16)
+                                    }
+                                }
+                            }
                             
                             Spacer()
                         }
@@ -99,8 +131,8 @@ struct ChatView: View {
                         .id(message.id)
                     }
                     
-                    // Loading indicator
-                    if viewModel.isLoading {
+                    // Streaming message bubble
+                    if viewModel.isStreaming && !viewModel.streamingMessage.isEmpty {
                         HStack(alignment: .top, spacing: 8) {
                             // AI avatar
                             Image(systemName: "brain")
@@ -110,26 +142,46 @@ struct ChatView: View {
                                 .background(Color.blue.gradient)
                                 .clipShape(Circle())
                             
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.gray.opacity(0.5))
-                                    .frame(width: 8, height: 8)
-                                    .opacity(1.0)
-                                    .animation(Animation.easeInOut(duration: 0.5).repeatForever().delay(0.0), value: viewModel.isLoading)
+                            VStack(alignment: .leading, spacing: 4) {
+                                // Sender label
+                                Text("AI Assistant")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 4)
                                 
-                                Circle()
-                                    .fill(Color.gray.opacity(0.5))
-                                    .frame(width: 8, height: 8)
-                                    .opacity(0.5)
-                                    .animation(Animation.easeInOut(duration: 0.5).repeatForever().delay(0.2), value: viewModel.isLoading)
-                                
-                                Circle()
-                                    .fill(Color.gray.opacity(0.5))
-                                    .frame(width: 8, height: 8)
-                                    .opacity(0.2)
-                                    .animation(Animation.easeInOut(duration: 0.5).repeatForever().delay(0.4), value: viewModel.isLoading)
+                                // Streaming content
+                                Text(viewModel.streamingMessage)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        LinearGradient(gradient: Gradient(colors: [Color.white, Color.white.opacity(0.9)]), startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    )
+                                    .cornerRadius(16)
+                                    .shadow(color: Color.black.opacity(0.03), radius: 3, x: 0, y: 1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .animation(.easeInOut(duration: 0.1), value: viewModel.streamingMessage)
                             }
-                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .id("streaming") // ID for scrolling
+                    }
+                    // Loading indicator (only show if no streaming message yet)
+                    else if viewModel.isLoading {
+                        HStack(alignment: .top, spacing: 8) {
+                            // AI avatar
+                            Image(systemName: "brain")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .frame(width: 30, height: 30)
+                                .background(Color.blue.gradient)
+                                .clipShape(Circle())
+                            
+                            TypingIndicator()
                             
                             Spacer()
                         }
@@ -150,6 +202,17 @@ struct ChatView: View {
                     }
                 }
             }
+            .onChange(of: viewModel.streamingMessage) { _ in
+                // Auto-scroll when streaming message updates
+                if !viewModel.streamingMessage.isEmpty {
+                    // Use a slight delay to ensure UI has updated before scrolling
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation {
+                            scrollView.scrollTo("streaming", anchor: .bottom)
+                        }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -161,15 +224,17 @@ struct ChatView: View {
             
             HStack(spacing: 12) {
                 // Text field with placeholder
-                TextField("Message", text: $viewModel.inputMessage)
+                TextField("Message", text: $viewModel.inputMessage, axis: .vertical)
+                    .lineLimit(1...5)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .background(Color(.systemGray6))
                     .cornerRadius(20)
                     .focused($isInputFocused)
                     .submitLabel(.send)
+                    .disabled(viewModel.isLoading)
                     .onSubmit {
-                        if !viewModel.inputMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        if !viewModel.inputMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isLoading {
                             Task {
                                 await viewModel.sendMessage()
                             }
@@ -186,15 +251,25 @@ struct ChatView: View {
                         .font(.system(size: 28))
                         .foregroundColor(.white)
                         .padding(2)
-                        .background(viewModel.inputMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                        .background(
+                            Group {
+                                if viewModel.inputMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading {
+                                    Color.gray
+                                } else {
+                                    LinearGradient(gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing)
+                                }
+                            }
+                        )
                         .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
                 }
-                .disabled(viewModel.inputMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(viewModel.inputMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isLoading)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(Color(.systemBackground))
-            .disabled(viewModel.isLoading)
+            .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: -1)
+            // Individual components are already disabled when loading
         }
     }
 }

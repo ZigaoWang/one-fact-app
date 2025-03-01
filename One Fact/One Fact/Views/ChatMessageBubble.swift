@@ -25,10 +25,16 @@ struct MessageBubble: View {
                 
                 // Message content
                 Text(message)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(isUser ? Color(.systemGray6) : .white)
-                    .cornerRadius(12)
+                    .background(
+                        isUser ? 
+                            LinearGradient(gradient: Gradient(colors: [Color(.systemGray5), Color(.systemGray6)]), startPoint: .topLeading, endPoint: .bottomTrailing) :
+                            LinearGradient(gradient: Gradient(colors: [Color.white, Color.white.opacity(0.9)]), startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.03), radius: 3, x: 0, y: 1)
                     .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
             }
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)

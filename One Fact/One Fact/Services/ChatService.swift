@@ -41,10 +41,12 @@ enum ChatError: Error, LocalizedError {
 @MainActor
 class ChatService {
     private let baseURL: String
+    private let streamURL: String
     
-    init(baseURL: String? = nil) {
+    init(baseURL: String? = nil, streamURL: String? = nil) {
         // Always use the deployed API endpoint for reliability
         self.baseURL = baseURL ?? "https://one-fact-api.fly.dev/api/v1/chat"
+        self.streamURL = streamURL ?? "https://one-fact-api.fly.dev/api/v1/chat/stream"
     }
     
     func sendMessage(factId: String, messages: [Message]) async throws -> Message {
@@ -113,6 +115,81 @@ class ChatService {
         } catch {
             throw ChatError.networkError(error)
         }
+    }
+    
+    // Stream chat messages with real-time updates
+    func streamMessage(factId: String, messages: [Message], onReceive: @escaping (String) -> Void, onComplete: @escaping (Result<Message, Error>) -> Void) {
+        guard let url = URL(string: streamURL) else {
+            onComplete(.failure(ChatError.invalidResponse))
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("text/event-stream", forHTTPHeaderField: "Accept")
+        
+        // Filter out system messages from the API request
+        let apiMessages = messages.filter { $0.role != .system }
+        
+        // Prepare request body
+        struct ChatRequest: Codable {
+            let factId: String
+            let messages: [MessageRequest]
+            
+            enum CodingKeys: String, CodingKey {
+                case factId = "fact_id"
+                case messages
+            }
+        }
+        
+        struct MessageRequest: Codable {
+            let role: String
+            let content: String
+        }
+        
+        let requestMessages = apiMessages.map { MessageRequest(role: $0.role.rawValue, content: $0.content) }
+        let chatRequest = ChatRequest(factId: factId, messages: requestMessages)
+        
+        let encoder = JSONEncoder()
+        
+        do {
+            request.httpBody = try encoder.encode(chatRequest)
+        } catch {
+            onComplete(.failure(ChatError.networkError(error)))
+            return
+        }
+        
+        // Create and start URLSession task
+        let task = URLSession.shared.dataTask(with: request) { _, response, error in
+            if let error = error {
+                Task { @MainActor in
+                    onComplete(.failure(ChatError.networkError(error)))
+                }
+                return
+            }
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                Task { @MainActor in
+                    onComplete(.failure(ChatError.invalidResponse))
+                }
+                return
+            }
+            
+            if !(200...299).contains(httpResponse.statusCode) {
+                Task { @MainActor in
+                    onComplete(.failure(ChatError.apiError("Server returned status code \(httpResponse.statusCode)")))
+                }
+                return
+            }
+            
+            // We'll handle the streaming data in the stream delegate
+        }
+        
+        // Create a URLSession with a delegate to handle the streaming
+        let session = URLSession(configuration: .default, delegate: SSEDelegate(onReceive: onReceive, onComplete: onComplete), delegateQueue: nil)
+        let streamTask = session.dataTask(with: request)
+        streamTask.resume()
     }
     
     // Use this method for local testing when API is not available
